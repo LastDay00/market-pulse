@@ -1,106 +1,62 @@
 ticker,name
 IWDA.AS,iShares Core MSCI World UCITS
-SWDA.MI,iShares Core MSCI World UCITS (MI)
 EUNL.DE,iShares Core MSCI World UCITS (DE)
 VWCE.DE,Vanguard FTSE All-World UCITS (Acc)
 VWRL.AS,Vanguard FTSE All-World UCITS (Dist)
 CSPX.AS,iShares Core S&P 500 UCITS (Acc)
 SXR8.DE,iShares Core S&P 500 UCITS (DE Acc)
 VUSA.AS,Vanguard S&P 500 UCITS
-EIMI.AS,iShares Core MSCI Emerging Markets IMI
-EMIM.AS,iShares Core MSCI EM IMI UCITS (Dist)
-CSX5.DE,iShares Core Euro STOXX 50 UCITS
-EUE.AS,iShares Core Euro STOXX 50 UCITS (NL)
+VUAG.L,Vanguard S&P 500 UCITS (London Acc)
+EIMI.L,iShares Core MSCI EM IMI UCITS (London)
+EMIM.L,iShares Core MSCI EM IMI UCITS (Dist L)
+CSEMU.AS,iShares Core MSCI EMU UCITS
 IMEU.AS,iShares Core MSCI Europe UCITS
 VEUR.AS,Vanguard FTSE Developed Europe UCITS
 EUNK.DE,iShares MSCI EMU UCITS
 IJPA.AS,iShares Core MSCI Japan IMI UCITS
 VJPN.AS,Vanguard FTSE Japan UCITS
 XDWD.DE,Xtrackers MSCI World UCITS
-XDWL.DE,Xtrackers MSCI World UCITS (Dist)
 XDEV.DE,Xtrackers MSCI Europe UCITS
 XMEU.DE,Xtrackers MSCI EMU UCITS
-XMWO.DE,Xtrackers MSCI World UCITS (Swap)
 MEUD.PA,Lyxor Core MSCI World UCITS
-WLD.PA,Amundi MSCI World UCITS
 CW8.PA,Amundi MSCI World UCITS (Acc)
-LCUW.PA,Lyxor MSCI World UCITS
-SP5.PA,Amundi S&P 500 UCITS
 PE500.PA,Amundi PEA S&P 500 UCITS
-500.PA,Amundi PEA S&P 500 ESG UCITS
 PAEEM.PA,Amundi PEA MSCI Emerging Markets UCITS
 PAASI.PA,Amundi PEA MSCI Asia Pacific ex Japan UCITS
 PCEU.PA,Amundi PEA Euro STOXX 50 UCITS
 RS2K.DE,SPDR Russell 2000 US Small Cap UCITS
 ZPRR.DE,SPDR Russell 2000 US Small Cap UCITS (Acc)
 IUSN.DE,iShares MSCI World Small Cap UCITS
-WSML.AS,iShares MSCI World Small Cap UCITS (NL)
-EMSA.AS,iShares MSCI EM Small Cap UCITS
-XDEM.DE,Xtrackers MSCI Emerging Markets UCITS
-EUNM.DE,iShares MSCI EM IMI UCITS
-AGGH.DE,iShares Core Global Aggregate Bond UCITS (Hedged)
-AGGU.DE,iShares Core Global Aggregate Bond UCITS (Unhedged)
-IEAG.AS,iShares Core Euro Aggregate Bond UCITS
-IBGX.DE,iShares Euro Government Bond 7-10 UCITS
-EUNA.DE,iShares Euro Government Bond 3-5 UCITS
-IHYG.AS,iShares Euro High Yield Corporate Bond UCITS
-IEAC.AS,iShares Euro Corporate Bond UCITS
-IBCZ.DE,iShares Euro Corporate Bond ESG UCITS
-VAGP.AS,Vanguard Global Aggregate Bond UCITS
-VETY.AS,Vanguard EUR Treasury Bond UCITS
-VECP.AS,Vanguard EUR Corporate Bond UCITS
+EXSA.DE,iShares STOXX Europe 600 UCITS
 SGLN.L,iShares Physical Gold ETC
 IGLN.L,iShares Physical Gold ETC (GBP)
 4GLD.DE,Xetra-Gold ETC
-EGLN.L,WisdomTree Physical Gold
-SSLV.L,WisdomTree Physical Silver
-SLVP.L,iShares Silver Trust ETC
-LYOR.PA,Lyxor STOXX Europe 600 UCITS
-EXSA.DE,iShares STOXX Europe 600 UCITS
-MEUD.DE,Lyxor STOXX Europe 600 UCITS (DE)
-SMEA.AS,iShares MSCI Europe UCITS
-VFEM.AS,Vanguard FTSE Emerging Markets UCITS
-VDEV.AS,Vanguard FTSE Developed World UCITS
-CEMA.AS,iShares MSCI EM Asia UCITS
-LYXR.PA,Lyxor MSCI Emerging Markets UCITS
-IS3R.DE,iShares Edge MSCI World Momentum Factor UCITS
-IS3N.DE,iShares Edge MSCI World Minimum Volatility UCITS
-IWMO.L,iShares Edge MSCI World Momentum Factor UCITS (L)
-IWQU.L,iShares Edge MSCI World Quality Factor UCITS
-IWVL.L,iShares Edge MSCI World Value Factor UCITS
-IWSZ.L,iShares Edge MSCI World Size Factor UCITS
-IS3S.DE,iShares Edge MSCI World Size UCITS
-IWFM.AS,iShares Edge MSCI World Multifactor UCITS
-EXXY.DE,iShares Global Clean Energy UCITS
 INRG.L,iShares Global Clean Energy UCITS (L)
 IQQH.DE,iShares Global Clean Energy UCITS (DE)
 ECAR.L,iShares Electric Vehicles and Driving Technology UCITS
-ICLN.L,iShares Global Clean Energy UCITS (UK)
-BATT.L,WisdomTree Battery Solutions UCITS
 WCLD.L,WisdomTree Cloud Computing UCITS
 WTAI.L,WisdomTree Artificial Intelligence UCITS
 ROBO.L,iShares Automation & Robotics UCITS
-RBOT.DE,iShares Automation & Robotics UCITS (DE)
-2B76.DE,Amundi Nasdaq-100 UCITS
 ANX.PA,Amundi Nasdaq-100 UCITS (PA)
-EQQQ.AS,Invesco Nasdaq 100 UCITS
 XNAS.DE,Xtrackers Nasdaq 100 UCITS
-CNDX.AS,iShares Nasdaq 100 UCITS
+CNDX.L,iShares Nasdaq 100 UCITS (L)
 QDVE.DE,iShares S&P 500 Information Technology Sector UCITS
 IUIT.L,iShares S&P 500 Information Technology UCITS (L)
-SPYG.DE,SPDR S&P 500 UCITS
 SPY5.DE,SPDR S&P 500 UCITS (Acc)
-VUAA.AS,Vanguard S&P 500 UCITS (Acc)
-IUSA.AS,iShares S&P 500 UCITS (Dist)
 CBUS.DE,Amundi MSCI USA UCITS
-XDUS.DE,Xtrackers MSCI USA UCITS
-IUSE.AS,iShares MSCI USA ESG UCITS
-SUSM.AS,iShares MSCI World ESG UCITS
-SUSW.AS,iShares MSCI World ESG Screened UCITS
-DHYG.L,WisdomTree USD High Yield Corporate Bond UCITS
-LQDA.L,iShares $ Corporate Bond UCITS
-IBTS.DE,iShares $ Treasury Bond 1-3yr UCITS
-IBTM.DE,iShares $ Treasury Bond 7-10yr UCITS
-IDTL.L,iShares $ Treasury Bond 20+yr UCITS
 VHYL.AS,Vanguard FTSE All-World High Div Yield UCITS
-SWDA.AS,iShares Core MSCI World UCITS (AS)
+IWMO.L,iShares Edge MSCI World Momentum Factor UCITS
+IWQU.L,iShares Edge MSCI World Quality Factor UCITS
+IWVL.L,iShares Edge MSCI World Value Factor UCITS
+IWSZ.L,iShares Edge MSCI World Size Factor UCITS
+IS3R.DE,iShares Edge MSCI World Momentum Factor UCITS (DE)
+IS3N.DE,iShares Edge MSCI World Minimum Volatility UCITS (DE)
+IBTS.L,iShares $ Treasury Bond 1-3yr UCITS (L)
+IBGS.L,iShares Euro Govt Bond 1-3yr UCITS
+IBGX.L,iShares Euro Govt Bond 7-10yr UCITS
+IDTL.L,iShares $ Treasury Bond 20+yr UCITS
+AGGH.L,iShares Core Global Aggregate Bond UCITS (Hedged L)
+LQDA.L,iShares $ Corporate Bond UCITS
+VETY.L,Vanguard EUR Treasury Bond UCITS
+VECP.L,Vanguard EUR Corporate Bond UCITS
+SEUR.L,iShares Core Euro Corporate Bond UCITS

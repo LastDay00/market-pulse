@@ -29,12 +29,12 @@ class ScannerScreen(Screen):
         n_long = sum(1 for o in self.opportunities if o.trade_plan.direction == "long")
         n_short = len(self.opportunities) - n_long
         yield Static(
-            f"· market pulse · horizon 1W · {len(self.opportunities)} opportunities "
+            f"· market pulse · horizon 1W · {len(self.opportunities)} opportunités "
             f"({n_long} long · {n_short} short) ·",
             classes="highlight-amber",
             id="header-info",
         )
-        yield Input(placeholder="/  search by ticker or name  (Esc to clear)",
+        yield Input(placeholder="/  rechercher par ticker ou nom  (Esc pour effacer)",
                     id="search-input")
         table = DataTable(cursor_type="row", zebra_stripes=False, id="opps-table")
         table.add_columns(
