@@ -5,7 +5,9 @@ from datetime import date, datetime
 import yfinance as yf
 
 from market_pulse.data.models import Bar
-from market_pulse.data.providers.base import NewsItem, Provider, TickerMeta
+from market_pulse.data.providers.base import (
+    FinancialLine, Fundamentals, NewsItem, Provider, TickerMeta,
+)
 
 
 class YFinanceProvider(Provider):
@@ -56,6 +58,21 @@ class YFinanceProvider(Provider):
                 return None
             if not info:
                 return None
+
+            def f(key: str) -> float | None:
+                v = info.get(key)
+                try:
+                    return float(v) if v is not None else None
+                except (TypeError, ValueError):
+                    return None
+
+            def i(key: str) -> int | None:
+                v = info.get(key)
+                try:
+                    return int(v) if v is not None else None
+                except (TypeError, ValueError):
+                    return None
+
             return TickerMeta(
                 ticker=ticker,
                 long_name=str(info.get("longName") or info.get("shortName") or ticker),
@@ -63,6 +80,101 @@ class YFinanceProvider(Provider):
                 sector=str(info.get("sector") or "—"),
                 industry=str(info.get("industry") or "—"),
                 currency=str(info.get("currency") or "—"),
+                market_cap=f("marketCap"),
+                enterprise_value=f("enterpriseValue"),
+                trailing_pe=f("trailingPE"),
+                forward_pe=f("forwardPE"),
+                peg_ratio=f("pegRatio") or f("trailingPegRatio"),
+                price_to_book=f("priceToBook"),
+                price_to_sales=f("priceToSalesTrailing12Months"),
+                ev_to_ebitda=f("enterpriseToEbitda"),
+                profit_margin=f("profitMargins"),
+                operating_margin=f("operatingMargins"),
+                gross_margin=f("grossMargins"),
+                return_on_equity=f("returnOnEquity"),
+                return_on_assets=f("returnOnAssets"),
+                revenue_growth=f("revenueGrowth"),
+                earnings_growth=f("earningsGrowth"),
+                dividend_yield=f("dividendYield"),
+                payout_ratio=f("payoutRatio"),
+                debt_to_equity=f("debtToEquity"),
+                current_ratio=f("currentRatio"),
+                quick_ratio=f("quickRatio"),
+                total_cash=f("totalCash"),
+                total_debt=f("totalDebt"),
+                recommendation=str(info.get("recommendationKey") or ""),
+                target_mean_price=f("targetMeanPrice"),
+                number_analysts=i("numberOfAnalystOpinions"),
+            )
+
+    async def fetch_fundamentals(self, ticker: str) -> Fundamentals | None:
+        async with self._sem:
+            loop = asyncio.get_running_loop()
+
+            def _fetch():
+                t = yf.Ticker(ticker)
+                return (
+                    t.financials,        # income statement annuel
+                    t.balance_sheet,     # bilan annuel
+                    t.cashflow,          # cash flow annuel
+                )
+
+            try:
+                income_df, balance_df, cashflow_df = await loop.run_in_executor(None, _fetch)
+            except Exception:
+                return None
+
+            # yfinance renvoie des DataFrames avec colonnes = dates (récentes à gauche),
+            # lignes = libellés. Certaines peuvent être vides selon le ticker.
+            def _df_to_lines(df, wanted: list[str]) -> tuple[list[str], list[FinancialLine]]:
+                if df is None or df.empty:
+                    return [], []
+                # Périodes = colonnes, formatées en année
+                periods = [str(c.year) if hasattr(c, "year") else str(c) for c in df.columns]
+                lines: list[FinancialLine] = []
+                for label in wanted:
+                    if label in df.index:
+                        row = df.loc[label]
+                        vals = [
+                            (float(v) if v is not None and str(v) != "nan" else None)
+                            for v in row.tolist()
+                        ]
+                        lines.append(FinancialLine(label=label, values=vals, periods=periods))
+                return periods, lines
+
+            income_labels = [
+                "Total Revenue", "Cost Of Revenue", "Gross Profit",
+                "Operating Income", "EBIT", "EBITDA",
+                "Net Income", "Net Income Common Stockholders",
+                "Diluted EPS", "Basic EPS",
+            ]
+            balance_labels = [
+                "Total Assets", "Total Liabilities Net Minority Interest",
+                "Total Equity Gross Minority Interest", "Stockholders Equity",
+                "Total Debt", "Long Term Debt", "Current Debt",
+                "Cash And Cash Equivalents", "Cash Cash Equivalents And Short Term Investments",
+                "Working Capital",
+            ]
+            cashflow_labels = [
+                "Operating Cash Flow", "Investing Cash Flow", "Financing Cash Flow",
+                "Free Cash Flow", "Capital Expenditure",
+                "Cash Dividends Paid", "Repurchase Of Capital Stock",
+            ]
+
+            periods, income_lines = _df_to_lines(income_df, income_labels)
+            if not periods:
+                periods_b, balance_lines = _df_to_lines(balance_df, balance_labels)
+                periods = periods_b
+            else:
+                _, balance_lines = _df_to_lines(balance_df, balance_labels)
+            _, cashflow_lines = _df_to_lines(cashflow_df, cashflow_labels)
+
+            return Fundamentals(
+                ticker=ticker,
+                periods=periods,
+                income=income_lines,
+                balance=balance_lines,
+                cashflow=cashflow_lines,
             )
 
     async def fetch_news(self, ticker: str, max_items: int = 5) -> list[NewsItem]:

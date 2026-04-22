@@ -116,6 +116,17 @@ class DetailScreen(Screen):
                              id="stats-panel", classes="panel")
                 yield Static(self._trade_plan_text(),
                              id="plan-panel", classes="panel")
+            # Fondamentaux : valorisation, rentabilité, croissance, santé bilan
+            yield Static(self._valuation_text(),
+                         id="valuation-panel", classes="panel")
+            # États financiers
+            with Horizontal(id="financials-row"):
+                yield Static(self._income_text(),
+                             id="income-panel", classes="panel")
+                yield Static(self._balance_text(),
+                             id="balance-panel", classes="panel")
+                yield Static(self._cashflow_text(),
+                             id="cashflow-panel", classes="panel")
             yield Static(self._news_text(),
                          id="news-panel", classes="panel")
         yield Footer()
@@ -179,6 +190,84 @@ class DetailScreen(Screen):
             f"   {_pos_bar(pos52)}  pos {pos52:.0f}%",
         ]
         return "\n".join(lines)
+
+    def _valuation_text(self) -> str:
+        m = self.opp.meta
+        if not m:
+            return "VALUATION & RATIOS\n (meta not loaded yet)"
+
+        def fn(v: float | None, pct: bool = False, scale: float = 1.0, unit: str = "") -> str:
+            if v is None:
+                return "     —"
+            if pct:
+                return f"{v * 100:>6.2f}%"
+            v *= scale
+            if abs(v) >= 1e9:
+                return f"{v/1e9:>6.2f}B{unit}"
+            if abs(v) >= 1e6:
+                return f"{v/1e6:>6.2f}M{unit}"
+            return f"{v:>6.2f}{unit}"
+
+        lines = [
+            "VALUATION & RATIOS",
+            f" VALORISATION                                 RENTABILITÉ",
+            f"  · Market Cap      {fn(m.market_cap, unit=f' {m.currency}')}        · Gross margin      {fn(m.gross_margin, pct=True)}",
+            f"  · Enterprise Val  {fn(m.enterprise_value, unit=f' {m.currency}')}        · Operating margin  {fn(m.operating_margin, pct=True)}",
+            f"  · Trailing P/E    {fn(m.trailing_pe)}         · Profit margin     {fn(m.profit_margin, pct=True)}",
+            f"  · Forward P/E     {fn(m.forward_pe)}         · Return on Equity  {fn(m.return_on_equity, pct=True)}",
+            f"  · PEG ratio       {fn(m.peg_ratio)}         · Return on Assets  {fn(m.return_on_assets, pct=True)}",
+            f"  · Price / Book    {fn(m.price_to_book)}",
+            f"  · Price / Sales   {fn(m.price_to_sales)}       CROISSANCE (YoY)",
+            f"  · EV / EBITDA     {fn(m.ev_to_ebitda)}         · Revenue growth    {fn(m.revenue_growth, pct=True)}",
+            "                                               · Earnings growth   " + fn(m.earnings_growth, pct=True),
+            "",
+            f" SOLIDITÉ BILAN                                DIVIDENDE & ANALYSTES",
+            f"  · Debt / Equity   {fn(m.debt_to_equity)}         · Dividend yield    {fn(m.dividend_yield, pct=True)}",
+            f"  · Current ratio   {fn(m.current_ratio)}         · Payout ratio      {fn(m.payout_ratio, pct=True)}",
+            f"  · Quick ratio     {fn(m.quick_ratio)}         · Recommandation    {m.recommendation or '—':>6}",
+            f"  · Total cash      {fn(m.total_cash, unit=f' {m.currency}')}        · Target moyen      {fn(m.target_mean_price)} ({m.number_analysts or '—'} an.)",
+            f"  · Total debt      {fn(m.total_debt, unit=f' {m.currency}')}",
+        ]
+        return "\n".join(lines)
+
+    def _fmt_financial_value(self, v: float | None) -> str:
+        if v is None:
+            return "     —"
+        if abs(v) >= 1e9:
+            return f"{v/1e9:>8.2f}B"
+        if abs(v) >= 1e6:
+            return f"{v/1e6:>8.2f}M"
+        if abs(v) >= 1e3:
+            return f"{v/1e3:>8.2f}K"
+        return f"{v:>9.2f}"
+
+    def _render_financial_block(self, title: str, lines) -> str:
+        f = self.opp.fundamentals
+        if not f or not lines:
+            return f"{title}\n (no data)"
+        periods = f.periods[:3] if f.periods else []
+        header = f"{title}\n  " + " " * 28 + "  ".join(f"{p:>9}" for p in periods)
+        out = [header]
+        for line in lines:
+            vals = line.values[:3]
+            val_str = "  ".join(self._fmt_financial_value(v) for v in vals)
+            out.append(f"  · {line.label:<28} {val_str}")
+        return "\n".join(out)
+
+    def _income_text(self) -> str:
+        f = self.opp.fundamentals
+        return self._render_financial_block("INCOME STATEMENT",
+                                             f.income if f else [])
+
+    def _balance_text(self) -> str:
+        f = self.opp.fundamentals
+        return self._render_financial_block("BALANCE SHEET",
+                                             f.balance if f else [])
+
+    def _cashflow_text(self) -> str:
+        f = self.opp.fundamentals
+        return self._render_financial_block("CASH FLOW",
+                                             f.cashflow if f else [])
 
     def _news_text(self) -> str:
         lines = ["RECENT NEWS"]

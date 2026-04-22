@@ -8,7 +8,9 @@ import pandas as pd
 
 from market_pulse.data.cache import BarCache
 from market_pulse.data.models import Bar
-from market_pulse.data.providers.base import NewsItem, Provider, TickerMeta
+from market_pulse.data.providers.base import (
+    Fundamentals, NewsItem, Provider, TickerMeta,
+)
 from market_pulse.engine.scoring import aggregate_score
 from market_pulse.engine.signals.weekly import (
     BollingerSqueezeBreakout, MA5AboveMA20, MACDCrossover,
@@ -80,6 +82,7 @@ class Opportunity:
     name: str = ""  # nom court depuis l'univers (ex. "Apple Inc.")
     meta: TickerMeta | None = None
     news: list[NewsItem] = field(default_factory=list)
+    fundamentals: Fundamentals | None = None
 
 
 def _bars_to_df(bars: list[Bar]) -> pd.DataFrame:
@@ -196,11 +199,13 @@ async def scan(
     top = opps[:enrich_top_n]
 
     async def _enrich(opp: Opportunity) -> None:
-        meta, news = await asyncio.gather(
+        meta, news, fundamentals = await asyncio.gather(
             provider.fetch_meta(opp.ticker),
             provider.fetch_news(opp.ticker, max_items=5),
+            provider.fetch_fundamentals(opp.ticker),
         )
         opp.meta = meta
+        opp.fundamentals = fundamentals
         # Traduction FR des titres de news (parallèle)
         if news:
             translated_titles = await _translate_news_titles([n.title for n in news])

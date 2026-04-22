@@ -96,9 +96,43 @@ DataTable > .datatable--cursor {
     width: 48;
 }
 
+#valuation-panel {
+    height: auto;
+    min-height: 15;
+    margin-bottom: 1;
+}
+
+#financials-row {
+    height: auto;
+    margin-bottom: 1;
+}
+
+#income-panel, #balance-panel, #cashflow-panel {
+    height: auto;
+    min-height: 12;
+    width: 1fr;
+    margin-right: 1;
+}
+
+#cashflow-panel {
+    margin-right: 0;
+}
+
 #news-panel {
     height: auto;
     min-height: 8;
+}
+
+#search-input {
+    background: #0A0A0B;
+    color: #E8E6E3;
+    border: solid #2A2A2E;
+    height: 3;
+    margin: 0 1 1 1;
+}
+
+#search-input:focus {
+    border: solid #E8B45D;
 }
 
 .score-high {
