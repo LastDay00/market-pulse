@@ -85,7 +85,7 @@ class DetailScreen(Screen):
         o = self.opp
         return (f"{o.ticker}  ·  SCORE {o.score:.1f} / 100"
                 f"  ·  horizon {o.horizon.upper()}"
-                f"  ·  {len(o.price_history)}d history")
+                f"  ·  {len(o.recent_bars)}d history")
 
     def _signals_text(self) -> str:
         """Une ligne par signal : `NAME ........... SCORE bar`.
