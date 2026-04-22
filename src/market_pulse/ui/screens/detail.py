@@ -302,7 +302,8 @@ class DetailScreen(Screen):
         """Worker Textual : enrichit l'Opportunity puis rerend les panneaux."""
         provider = self.app.provider
         try:
-            blend = getattr(self.app.settings, "blend_fundamentals", True)
+            mode = getattr(self.app.settings, "scoring_mode", "blended")
+            blend = mode == "blended"
             await enrich_opportunity(self.opp, provider, blend_fundamentals=blend)
         except Exception as e:
             self.notify(f"Erreur chargement : {e}", severity="error")
