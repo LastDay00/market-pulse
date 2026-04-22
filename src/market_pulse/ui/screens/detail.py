@@ -299,12 +299,17 @@ class DetailScreen(Screen):
 
     @work(exclusive=True)
     async def _fetch_worker(self) -> None:
-        """Worker Textual : enrichit l'Opportunity puis rerend les panneaux."""
+        """Worker Textual : force-refresh les données depuis yfinance
+        (bypass du cache 24h) et rerend les panneaux."""
         provider = self.app.provider
         try:
             mode = getattr(self.app.settings, "scoring_mode", "blended")
             blend = mode == "blended"
-            await enrich_opportunity(self.opp, provider, blend_fundamentals=blend)
+            # F = force refresh : toujours bypass le cache
+            await enrich_opportunity(
+                self.opp, provider,
+                blend_fundamentals=blend, force_refresh=True,
+            )
         except Exception as e:
             self.notify(f"Erreur chargement : {e}", severity="error")
         finally:

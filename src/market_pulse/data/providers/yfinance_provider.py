@@ -1,10 +1,13 @@
 """Provider yfinance avec fetch asynchrone via run_in_executor."""
 import asyncio
 import logging
+from dataclasses import asdict
 from datetime import date, datetime
 
 import yfinance as yf
 
+from market_pulse.config import CACHE_DB
+from market_pulse.data.cache import BarCache
 from market_pulse.data.models import Bar
 from market_pulse.data.providers.base import (
     FinancialLine, Fundamentals, NewsItem, Provider, TickerMeta,
@@ -15,6 +18,17 @@ from market_pulse.data.providers.base import (
 # on a nettoyé la liste UCITS ETFs pour que les tickers invalides soient rares)
 logging.getLogger("yfinance").setLevel(logging.CRITICAL)
 logging.getLogger("peewee").setLevel(logging.CRITICAL)
+
+
+def _get_cache() -> BarCache:
+    """Accès paresseux au cache SQLite (une connexion par processus)."""
+    global _CACHE
+    if _CACHE is None:
+        _CACHE = BarCache(CACHE_DB)
+    return _CACHE
+
+
+_CACHE: BarCache | None = None
 
 
 class YFinanceProvider(Provider):
@@ -54,7 +68,15 @@ class YFinanceProvider(Provider):
                 ))
             return bars
 
-    async def fetch_meta(self, ticker: str) -> TickerMeta | None:
+    async def fetch_meta(self, ticker: str, force_refresh: bool = False) -> TickerMeta | None:
+        if not force_refresh:
+            try:
+                cached = _get_cache().get_cached_json("meta_cache", ticker, ttl_hours=24)
+                if cached is not None:
+                    return TickerMeta(**cached)
+            except Exception:
+                pass
+
         async with self._sem:
             loop = asyncio.get_running_loop()
 
@@ -135,7 +157,7 @@ class YFinanceProvider(Provider):
                 except (TypeError, ValueError):
                     return None
 
-            return TickerMeta(
+            meta_result = TickerMeta(
                 ticker=ticker,
                 long_name=str(info.get("longName") or info.get("shortName") or ticker),
                 short_name=str(info.get("shortName") or ticker),
@@ -171,7 +193,33 @@ class YFinanceProvider(Provider):
                 next_earnings_date=next_date,
             )
 
-    async def fetch_fundamentals(self, ticker: str) -> Fundamentals | None:
+            # Écriture cache
+            try:
+                _get_cache().set_cached_json("meta_cache", ticker,
+                                              asdict(meta_result))
+            except Exception:
+                pass
+            return meta_result
+
+    async def fetch_fundamentals(self, ticker: str, force_refresh: bool = False) -> Fundamentals | None:
+        if not force_refresh:
+            try:
+                cached = _get_cache().get_cached_json("fundamentals_cache", ticker, ttl_hours=24)
+                if cached is not None:
+                    return Fundamentals(
+                        ticker=cached["ticker"],
+                        periods=cached.get("periods", []),
+                        income=[FinancialLine(**l) for l in cached.get("income", [])],
+                        balance=[FinancialLine(**l) for l in cached.get("balance", [])],
+                        cashflow=[FinancialLine(**l) for l in cached.get("cashflow", [])],
+                        periods_q=cached.get("periods_q", []),
+                        income_q=[FinancialLine(**l) for l in cached.get("income_q", [])],
+                        balance_q=[FinancialLine(**l) for l in cached.get("balance_q", [])],
+                        cashflow_q=[FinancialLine(**l) for l in cached.get("cashflow_q", [])],
+                    )
+            except Exception:
+                pass
+
         async with self._sem:
             loop = asyncio.get_running_loop()
 
@@ -297,7 +345,7 @@ class YFinanceProvider(Provider):
             _, cashflow_q_lines = _df_to_lines_with_fallback(
                 cashflow_q_df, cashflow_labels, quarterly=True, max_cols=4)
 
-            return Fundamentals(
+            fund_result = Fundamentals(
                 ticker=ticker,
                 periods=periods,
                 income=income_lines,
@@ -308,6 +356,12 @@ class YFinanceProvider(Provider):
                 balance_q=balance_q_lines,
                 cashflow_q=cashflow_q_lines,
             )
+            try:
+                _get_cache().set_cached_json("fundamentals_cache", ticker,
+                                              asdict(fund_result))
+            except Exception:
+                pass
+            return fund_result
 
     async def fetch_news(self, ticker: str, max_items: int = 5) -> list[NewsItem]:
         async with self._sem:

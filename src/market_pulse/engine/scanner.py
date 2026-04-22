@@ -145,14 +145,24 @@ def compute_fundamental_score(meta: TickerMeta | None) -> float | None:
 
 
 async def enrich_opportunity(opp: Opportunity, provider: Provider,
-                              blend_fundamentals: bool = True) -> None:
+                              blend_fundamentals: bool = True,
+                              force_refresh: bool = False) -> None:
     """Fetch meta + news + fundamentals, traduit les news, puis blend
     optionnellement le score technique avec un score fondamental (80/20).
+
+    force_refresh=True bypasse le cache 24h et refetch depuis yfinance.
     """
+    # Certains providers custom peuvent ne pas supporter force_refresh
+    meta_task = provider.fetch_meta(opp.ticker, force_refresh=force_refresh) \
+        if "force_refresh" in provider.fetch_meta.__code__.co_varnames \
+        else provider.fetch_meta(opp.ticker)
+    fund_task = provider.fetch_fundamentals(opp.ticker, force_refresh=force_refresh) \
+        if "force_refresh" in provider.fetch_fundamentals.__code__.co_varnames \
+        else provider.fetch_fundamentals(opp.ticker)
     meta, news, fundamentals = await asyncio.gather(
-        provider.fetch_meta(opp.ticker),
+        meta_task,
         provider.fetch_news(opp.ticker, max_items=5),
-        provider.fetch_fundamentals(opp.ticker),
+        fund_task,
     )
     opp.meta = meta
     opp.fundamentals = fundamentals

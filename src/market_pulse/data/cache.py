@@ -1,6 +1,7 @@
-"""Cache SQLite pour les barres OHLCV."""
+"""Cache SQLite pour les barres OHLCV et les fondamentaux (TTL 24h)."""
+import json
 import sqlite3
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from pathlib import Path
 
 from market_pulse.data.models import Bar
@@ -18,6 +19,19 @@ CREATE TABLE IF NOT EXISTS bars (
     PRIMARY KEY (ticker, date)
 );
 CREATE INDEX IF NOT EXISTS idx_bars_ticker_date ON bars(ticker, date);
+
+-- Cache meta (TickerMeta) + fundamentals (Fundamentals) pour éviter
+-- le rate-limit Yahoo. TTL recommandé 24h.
+CREATE TABLE IF NOT EXISTS meta_cache (
+    ticker TEXT PRIMARY KEY,
+    json_data TEXT NOT NULL,
+    fetched_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE IF NOT EXISTS fundamentals_cache (
+    ticker TEXT PRIMARY KEY,
+    json_data TEXT NOT NULL,
+    fetched_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
 """
 
 
@@ -77,6 +91,43 @@ class BarCache:
             return datetime.fromisoformat(row[0])
         except ValueError:
             return None
+
+    # ---- Cache meta / fundamentals ----
+
+    def get_cached_json(self, table: str, ticker: str,
+                        ttl_hours: int = 24) -> dict | None:
+        """Retourne le JSON décodé si présent et frais, sinon None.
+        table ∈ {'meta_cache', 'fundamentals_cache'}.
+        """
+        if table not in ("meta_cache", "fundamentals_cache"):
+            raise ValueError(f"Unknown cache table: {table}")
+        cur = self._conn.execute(
+            f"SELECT json_data, fetched_at FROM {table} WHERE ticker = ?",
+            (ticker,),
+        )
+        row = cur.fetchone()
+        if not row:
+            return None
+        try:
+            fetched = datetime.fromisoformat(row[1])
+        except ValueError:
+            return None
+        if datetime.now() - fetched > timedelta(hours=ttl_hours):
+            return None
+        try:
+            return json.loads(row[0])
+        except Exception:
+            return None
+
+    def set_cached_json(self, table: str, ticker: str, data: dict) -> None:
+        if table not in ("meta_cache", "fundamentals_cache"):
+            raise ValueError(f"Unknown cache table: {table}")
+        self._conn.execute(
+            f"INSERT OR REPLACE INTO {table} (ticker, json_data, fetched_at) "
+            f"VALUES (?, ?, ?)",
+            (ticker, json.dumps(data), datetime.now().isoformat()),
+        )
+        self._conn.commit()
 
     def close(self) -> None:
         self._conn.close()
