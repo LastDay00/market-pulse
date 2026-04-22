@@ -248,102 +248,110 @@ class YFinanceProvider(Provider):
                 q = (col.month - 1) // 3 + 1
                 return f"Q{q}-{col.year % 100:02d}"
 
-            def _df_to_lines(df, wanted: list[str], quarterly: bool = False,
-                             max_cols: int = 3) -> tuple[list[str], list[FinancialLine]]:
+            # Pour chaque concept, on liste les noms yfinance possibles par ordre
+            # de priorité. On ne prend que le PREMIER trouvé → pas de duplicats
+            # (ex. "Operating Cash Flow" vs "Cash Flow From Continuing Operating
+            # Activities" sont la même donnée, on garde un seul).
+            income_groups = [
+                ["Total Revenue", "Revenue", "Operating Revenue"],
+                ["Cost Of Revenue", "Cost Of Goods Sold"],
+                ["Gross Profit"],
+                ["Operating Income", "Operating Income From Continuing Operations"],
+                ["EBIT"],
+                ["EBITDA", "Normalized EBITDA"],
+                ["Net Income", "Net Income Common Stockholders",
+                 "Net Income Continuous Operations"],
+                ["Diluted EPS"],
+                ["Basic EPS"],
+            ]
+            balance_groups = [
+                ["Total Assets"],
+                ["Total Liabilities Net Minority Interest", "Total Liabilities"],
+                ["Stockholders Equity", "Common Stock Equity",
+                 "Total Equity Gross Minority Interest"],
+                ["Total Debt"],
+                ["Long Term Debt", "Long Term Debt And Capital Lease Obligation"],
+                ["Current Debt", "Current Debt And Capital Lease Obligation"],
+                ["Cash And Cash Equivalents", "Cash Financial", "Cash Equivalents"],
+                ["Cash Cash Equivalents And Short Term Investments"],
+                ["Working Capital"],
+                ["Current Assets"],
+                ["Current Liabilities"],
+                ["Inventory"],
+                ["Receivables"],
+                ["Net PPE"],
+            ]
+            cashflow_groups = [
+                ["Operating Cash Flow",
+                 "Cash Flow From Continuing Operating Activities"],
+                ["Investing Cash Flow",
+                 "Cash Flow From Continuing Investing Activities"],
+                ["Financing Cash Flow",
+                 "Cash Flow From Continuing Financing Activities"],
+                ["Free Cash Flow"],
+                ["Capital Expenditure", "Purchase Of PPE"],
+                ["Cash Dividends Paid", "Common Stock Dividend Paid"],
+                ["Repurchase Of Capital Stock"],
+                ["Repayment Of Debt"],
+            ]
+
+            def _df_groups_to_lines(df, groups, quarterly=False, max_cols=3):
+                """Pour chaque groupe (liste de noms alternatifs), prend la
+                première ligne trouvée dans le DataFrame yfinance. Si aucun
+                groupe ne matche, fallback sur les 10 premières lignes.
+                """
                 if df is None or df.empty:
                     return [], []
-                # On garde uniquement les N colonnes les plus récentes
                 cols = list(df.columns)[:max_cols]
                 periods = [_period_label(c, quarterly) for c in cols]
                 lines: list[FinancialLine] = []
-                for label in wanted:
-                    if label in df.index:
-                        row = df.loc[label][cols]
-                        vals = [
-                            (float(v) if v is not None and str(v) != "nan" else None)
-                            for v in row.tolist()
-                        ]
-                        lines.append(FinancialLine(label=label, values=vals, periods=periods))
-                return periods, lines
-
-            # Listes de labels connus + fallback automatique sur les rows disponibles
-            # si aucun label ne matche (utile pour ETF, ADR, tickers atypiques)
-            income_labels = [
-                "Total Revenue", "Revenue", "Operating Revenue",
-                "Cost Of Revenue", "Cost Of Goods Sold",
-                "Gross Profit",
-                "Operating Income", "Operating Expense",
-                "EBIT", "EBITDA", "Normalized EBITDA",
-                "Net Income", "Net Income Common Stockholders",
-                "Net Income Continuous Operations",
-                "Diluted EPS", "Basic EPS",
-            ]
-            balance_labels = [
-                "Total Assets",
-                "Total Liabilities Net Minority Interest", "Total Liabilities",
-                "Total Equity Gross Minority Interest", "Stockholders Equity",
-                "Common Stock Equity",
-                "Total Debt", "Long Term Debt", "Current Debt",
-                "Long Term Debt And Capital Lease Obligation",
-                "Current Debt And Capital Lease Obligation",
-                "Cash And Cash Equivalents",
-                "Cash Cash Equivalents And Short Term Investments",
-                "Cash Financial", "Cash Equivalents",
-                "Working Capital", "Current Assets", "Current Liabilities",
-                "Inventory", "Receivables", "Net PPE",
-            ]
-            cashflow_labels = [
-                "Operating Cash Flow", "Cash Flow From Continuing Operating Activities",
-                "Investing Cash Flow", "Cash Flow From Continuing Investing Activities",
-                "Financing Cash Flow", "Cash Flow From Continuing Financing Activities",
-                "Free Cash Flow",
-                "Capital Expenditure", "Purchase Of PPE",
-                "Cash Dividends Paid", "Common Stock Dividend Paid",
-                "Repurchase Of Capital Stock", "Repayment Of Debt",
-                "Net Income From Continuing Operations",
-            ]
-
-            def _df_to_lines_with_fallback(df, wanted, quarterly=False, max_cols=3):
-                """Comme _df_to_lines, mais si aucun label connu ne matche,
-                on renvoie simplement les 8 premières lignes du DataFrame."""
-                periods, lines = _df_to_lines(df, wanted, quarterly, max_cols)
-                if lines or df is None or df.empty:
+                # On prend le premier label disponible par groupe
+                for group in groups:
+                    for label in group:
+                        if label in df.index:
+                            row = df.loc[label][cols]
+                            vals = [
+                                (float(v) if v is not None and str(v) != "nan" else None)
+                                for v in row.tolist()
+                            ]
+                            lines.append(FinancialLine(
+                                label=label, values=vals, periods=periods))
+                            break
+                if lines:
                     return periods, lines
-                # Fallback : prendre les 8 premières rows disponibles
-                cols = list(df.columns)[:max_cols]
-                periods = [_period_label(c, quarterly) for c in cols]
-                fallback_lines = []
-                for label in df.index[:8]:
+                # Fallback : 10 premières rows si aucun groupe n'a matché
+                fallback = []
+                for label in df.index[:10]:
                     row = df.loc[label][cols]
                     vals = [
                         (float(v) if v is not None and str(v) != "nan" else None)
                         for v in row.tolist()
                     ]
-                    fallback_lines.append(FinancialLine(
+                    fallback.append(FinancialLine(
                         label=str(label), values=vals, periods=periods))
-                return periods, fallback_lines
+                return periods, fallback
 
             # Annuel — 3 colonnes
-            periods, income_lines = _df_to_lines_with_fallback(
-                income_df, income_labels, max_cols=3)
+            periods, income_lines = _df_groups_to_lines(
+                income_df, income_groups, max_cols=3)
             if not periods:
-                periods, _ = _df_to_lines_with_fallback(
-                    balance_df, balance_labels, max_cols=3)
-            _, balance_lines = _df_to_lines_with_fallback(
-                balance_df, balance_labels, max_cols=3)
-            _, cashflow_lines = _df_to_lines_with_fallback(
-                cashflow_df, cashflow_labels, max_cols=3)
+                periods, _ = _df_groups_to_lines(
+                    balance_df, balance_groups, max_cols=3)
+            _, balance_lines = _df_groups_to_lines(
+                balance_df, balance_groups, max_cols=3)
+            _, cashflow_lines = _df_groups_to_lines(
+                cashflow_df, cashflow_groups, max_cols=3)
 
             # Trimestriel — 4 colonnes
-            periods_q, income_q_lines = _df_to_lines_with_fallback(
-                income_q_df, income_labels, quarterly=True, max_cols=4)
+            periods_q, income_q_lines = _df_groups_to_lines(
+                income_q_df, income_groups, quarterly=True, max_cols=4)
             if not periods_q:
-                periods_q, _ = _df_to_lines_with_fallback(
-                    balance_q_df, balance_labels, quarterly=True, max_cols=4)
-            _, balance_q_lines = _df_to_lines_with_fallback(
-                balance_q_df, balance_labels, quarterly=True, max_cols=4)
-            _, cashflow_q_lines = _df_to_lines_with_fallback(
-                cashflow_q_df, cashflow_labels, quarterly=True, max_cols=4)
+                periods_q, _ = _df_groups_to_lines(
+                    balance_q_df, balance_groups, quarterly=True, max_cols=4)
+            _, balance_q_lines = _df_groups_to_lines(
+                balance_q_df, balance_groups, quarterly=True, max_cols=4)
+            _, cashflow_q_lines = _df_groups_to_lines(
+                cashflow_q_df, cashflow_groups, quarterly=True, max_cols=4)
 
             fund_result = Fundamentals(
                 ticker=ticker,

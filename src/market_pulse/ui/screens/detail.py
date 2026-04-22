@@ -633,8 +633,13 @@ class DetailScreen(Screen):
     ) -> Text:
         """Rend un bloc financier en Rich Text avec chiffres colorés + % variation.
 
-        periods : liste des labels de colonne (années pour annuel, Qn-YY pour trimestriel).
+        Alignement strict :
+        - Préfixe ligne : "  · " (4 chars)
+        - Label tronqué ou paddé à LABEL_W (36 chars)
+        - Chaque cellule : "  " + {num:>15} + "  " + {pct:>7}  =  26 chars
+        - Header : "  " + espaces LABEL_W + chaque colonne "  " + {period:>24}
         """
+        LABEL_W = 36
         text = Text()
         f = self.opp.fundamentals
         if not f or not lines:
@@ -647,17 +652,27 @@ class DetailScreen(Screen):
         title_full = f"{title}" + (f" · en {currency}" if currency else "")
 
         text.append(f"{title_full}\n", style="bold #E8B45D")
-        text.append("  " + " " * 34
-                    + "  ".join(f"{p:>24}" for p in periods) + "\n",
-                    style="#8A8680")
+        # Header aligné sur les cellules :
+        #   Ligne :  "  · " (4)  +  {label:LABEL_W}  +  N×("  " + num:15 + "  " + pct:7)
+        #   Header :  "    " (4)  +  {blanks:LABEL_W} +  N×("  " + period:15 + 2 + 7 blanks)
+        # → chaque période right-alignée sur 15 chars, sous la colonne des num
+        text.append(" " * (4 + LABEL_W))
+        header_cells = "".join(f"  {p:>15}  {'':>7}" for p in periods)
+        text.append(header_cells + "\n", style="#8A8680")
 
         n_cols = len(periods)
         for line in lines:
             vals = line.values[:n_cols]
             label_fr = self._translate_label(line.label)
+            # Tronque si trop long, padde si trop court — garde l'alignement strict
+            if len(label_fr) > LABEL_W:
+                label_disp = label_fr[: LABEL_W - 1] + "…"
+            else:
+                label_disp = label_fr.ljust(LABEL_W)
             preference = self.DIRECTION_PREFERENCE.get(line.label, "neutral")
 
-            text.append(f"  · {label_fr:<32}")
+            text.append("  · ")
+            text.append(label_disp)
             for i, v in enumerate(vals):
                 prev = vals[i + 1] if i + 1 < len(vals) else None
                 color = self._color_for_direction(v, prev, preference)
