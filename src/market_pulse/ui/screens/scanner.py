@@ -10,9 +10,9 @@ from market_pulse.ui.widgets.score_bar import render_score_bar
 
 class ScannerScreen(Screen):
     BINDINGS = [
-        Binding("enter", "open_detail", "Detail"),
-        Binding("r", "refresh", "Refresh"),
-        Binding("q", "app.quit", "Quit"),
+        Binding("enter", "open_detail", "Detail", show=True),
+        Binding("r", "refresh", "Refresh", show=True),
+        Binding("q", "app.quit", "Quit", show=True),
     ]
 
     def __init__(self, opportunities: list[Opportunity]) -> None:
@@ -20,12 +20,12 @@ class ScannerScreen(Screen):
         self.opportunities = opportunities
 
     def compose(self) -> ComposeResult:
-        yield Header()
+        yield Header(show_clock=True)
         yield Static(
             f"· market pulse · horizon 1W · {len(self.opportunities)} opportunities ·",
             classes="highlight-amber",
         )
-        table = DataTable(cursor_type="row", zebra_stripes=False)
+        table = DataTable(cursor_type="row", zebra_stripes=False, id="opps-table")
         table.add_columns("#", "TICKER", "SCORE", "ENTRY", "TP", "SL", "R/R", "▲%")
         for i, opp in enumerate(self.opportunities, start=1):
             tp = opp.trade_plan
@@ -44,7 +44,18 @@ class ScannerScreen(Screen):
         yield table
         yield Footer()
 
+    def on_mount(self) -> None:
+        self.query_one(DataTable).focus()
+
+    def on_data_table_row_selected(self, event: DataTable.RowSelected) -> None:
+        """Enter sur une ligne → ouvre le détail. Géré comme event DataTable
+        plutôt qu'un Binding 'enter' parce que DataTable consomme la touche."""
+        self._open_detail()
+
     def action_open_detail(self) -> None:
+        self._open_detail()
+
+    def _open_detail(self) -> None:
         table = self.query_one(DataTable)
         row = table.cursor_row
         if 0 <= row < len(self.opportunities):

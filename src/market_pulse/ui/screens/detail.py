@@ -2,13 +2,14 @@
 import plotext as plt
 from textual.app import ComposeResult
 from textual.binding import Binding
+from textual.containers import VerticalScroll
 from textual.screen import Screen
 from textual.widgets import Footer, Header, Static
 
 from market_pulse.engine.scanner import Opportunity
 
 
-def _render_plotext_chart(opp: Opportunity, width: int = 60, height: int = 15) -> str:
+def _render_plotext_chart(opp: Opportunity, width: int = 60, height: int = 12) -> str:
     """Placeholder Phase 1 : un trait simple au niveau de l'entrée.
     Phase 2 branchera les vraies données de prix."""
     plt.clf()
@@ -21,7 +22,8 @@ def _render_plotext_chart(opp: Opportunity, width: int = 60, height: int = 15) -
 
 class DetailScreen(Screen):
     BINDINGS = [
-        Binding("escape", "app.pop_screen", "Back"),
+        Binding("escape", "app.pop_screen", "Back", show=True),
+        Binding("q", "app.quit", "Quit", show=True),
     ]
 
     def __init__(self, opp: Opportunity) -> None:
@@ -29,28 +31,29 @@ class DetailScreen(Screen):
         self.opp = opp
 
     def compose(self) -> ComposeResult:
-        yield Header()
+        yield Header(show_clock=True)
         tp = self.opp.trade_plan
-        yield Static(
-            f"· {self.opp.ticker} · score {self.opp.score:.1f} · horizon {self.opp.horizon} ·",
-            classes="highlight-amber",
-        )
-        yield Static(_render_plotext_chart(self.opp))
+        with VerticalScroll():
+            yield Static(
+                f"· {self.opp.ticker} · score {self.opp.score:.1f} · horizon {self.opp.horizon} ·",
+                classes="highlight-amber",
+            )
+            yield Static(_render_plotext_chart(self.opp))
 
-        signals_text = "\n".join(
-            f"  · {name:<28} {score:5.1f}  {md}"
-            for name, score, md in self.opp.signal_details
-        )
-        yield Static(f"Signals:\n{signals_text}")
+            signals_text = "\n".join(
+                f"  · {name:<28} {score:5.1f}  {md}"
+                for name, score, md in self.opp.signal_details
+            )
+            yield Static(f"Signals:\n{signals_text}")
 
-        uplift = (tp.target - tp.entry) / tp.entry * 100 if tp.entry else 0
-        downside = (tp.stop - tp.entry) / tp.entry * 100 if tp.entry else 0
-        plan_text = (
-            f"Trade Plan:\n"
-            f"  · Entry         {tp.entry:>8.2f}\n"
-            f"  · Target (TP)   {tp.target:>8.2f}   {uplift:+.1f}%\n"
-            f"  · Stop (SL)     {tp.stop:>8.2f}   {downside:+.1f}%\n"
-            f"  · Risk/Reward   {tp.risk_reward:>4.1f}"
-        )
-        yield Static(plan_text)
+            uplift = (tp.target - tp.entry) / tp.entry * 100 if tp.entry else 0
+            downside = (tp.stop - tp.entry) / tp.entry * 100 if tp.entry else 0
+            plan_text = (
+                f"Trade Plan:\n"
+                f"  · Entry         {tp.entry:>8.2f}\n"
+                f"  · Target (TP)   {tp.target:>8.2f}   {uplift:+.1f}%\n"
+                f"  · Stop (SL)     {tp.stop:>8.2f}   {downside:+.1f}%\n"
+                f"  · Risk/Reward   {tp.risk_reward:>4.1f}"
+            )
+            yield Static(plan_text)
         yield Footer()

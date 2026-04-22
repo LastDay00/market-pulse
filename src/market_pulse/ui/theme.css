@@ -8,19 +8,26 @@ Screen {
 Header {
     background: #0A0A0B;
     color: #E8E6E3;
-    height: 1;
-    border-bottom: solid #2A2A2E;
+}
+
+HeaderTitle {
+    color: #E8B45D;
 }
 
 Footer {
     background: #0A0A0B;
     color: #8A8680;
-    border-top: solid #2A2A2E;
+}
+
+FooterKey {
+    background: #0A0A0B;
+    color: #E85D5D;
 }
 
 DataTable {
     background: #0A0A0B;
     color: #E8E6E3;
+    height: 1fr;
 }
 
 DataTable > .datatable--header {
@@ -32,6 +39,7 @@ DataTable > .datatable--header {
 DataTable > .datatable--cursor {
     background: #2A2A2E;
     color: #E8B45D;
+    text-style: bold;
 }
 
 .score-high {
@@ -60,4 +68,5 @@ DataTable > .datatable--cursor {
 
 .highlight-amber {
     color: #E8B45D;
+    padding: 0 1;
 }
