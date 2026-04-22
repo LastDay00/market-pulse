@@ -140,19 +140,20 @@ class DetailScreen(Screen):
         with VerticalScroll(id="detail-scroll"):
             yield Static(self._title_line(), classes="highlight-amber", id="title")
             yield Static(self._subtitle_line(), id="subtitle")
-            # Row 1 : Chart + Signaux + Plan de trade + Stats (4 colonnes)
+            # Row 1 : Chart + Plan de trade + Stats (3 colonnes)
             with Horizontal(id="top-row"):
                 yield Static(_render_candles(self.opp),
                              id="chart-panel", classes="panel")
-                yield Static(self._signals_text(),
-                             id="signals-panel", classes="panel")
                 yield Static(self._trade_plan_text(),
                              id="plan-panel", classes="panel")
                 yield Static(self._stats_text(),
                              id="stats-panel", classes="panel")
-            # Row 3 : News full width
-            yield Static(self._news_text(),
-                         id="news-panel", classes="panel")
+            # Row 2 : News + Signaux côte à côte
+            with Horizontal(id="news-row"):
+                yield Static(self._news_text(),
+                             id="news-panel", classes="panel")
+                yield Static(self._signals_text(),
+                             id="signals-panel", classes="panel")
             # Fondamentaux : valorisation, rentabilité, croissance, santé bilan
             yield Static(self._valuation_text(),
                          id="valuation-panel", classes="panel")

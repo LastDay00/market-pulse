@@ -107,7 +107,7 @@ DataTable > .datatable--cursor {
     margin-bottom: 1;
 }
 
-#signals-panel, #plan-panel, #stats-panel {
+#plan-panel, #stats-panel {
     width: 1fr;
     height: auto;
     min-height: 18;
@@ -131,9 +131,24 @@ DataTable > .datatable--cursor {
     margin-bottom: 1;
 }
 
-#news-panel {
+#news-row {
     height: auto;
-    min-height: 8;
+    min-height: 10;
+    margin-bottom: 1;
+}
+
+#news-panel {
+    width: 2fr;
+    height: auto;
+    min-height: 10;
+    margin-right: 1;
+}
+
+#signals-panel {
+    width: 1fr;
+    height: auto;
+    min-height: 10;
+    margin-right: 0;
 }
 
 #search-input {
