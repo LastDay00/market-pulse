@@ -47,6 +47,9 @@ async def test_scan_returns_opportunities(stub_provider, tmp_path):
     assert isinstance(opps, list)
     assert all(isinstance(o, Opportunity) for o in opps)
     assert {o.ticker for o in opps} <= {"AAAA", "BBBB"}
+    # Chaque opportunity a un historique de prix non-vide
+    assert all(len(o.price_history) > 0 for o in opps)
+    assert all(isinstance(p[1], float) for o in opps for p in o.price_history)
 
 
 async def test_scan_filters_by_risk_reward(stub_provider, tmp_path):

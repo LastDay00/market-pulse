@@ -42,6 +42,45 @@ DataTable > .datatable--cursor {
     text-style: bold;
 }
 
+/* Detail screen panels */
+
+#detail-scroll {
+    padding: 1 2;
+}
+
+#title {
+    color: #E8B45D;
+    text-style: bold;
+    padding: 0 1;
+    margin-bottom: 1;
+}
+
+#top-panels {
+    height: 18;
+    margin-bottom: 1;
+}
+
+.panel {
+    background: #0A0A0B;
+    color: #E8E6E3;
+    border: round #2A2A2E;
+    padding: 0 1;
+}
+
+#chart-panel {
+    width: 2fr;
+    margin-right: 1;
+}
+
+#signals-panel {
+    width: 1fr;
+    min-width: 52;
+}
+
+#plan-panel {
+    height: auto;
+}
+
 .score-high {
     color: #7FB069;
 }
@@ -68,5 +107,4 @@ DataTable > .datatable--cursor {
 
 .highlight-amber {
     color: #E8B45D;
-    padding: 0 1;
 }
