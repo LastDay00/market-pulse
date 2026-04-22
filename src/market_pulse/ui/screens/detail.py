@@ -219,10 +219,13 @@ class DetailScreen(Screen):
                 lines.append(f"     {meta_str}")
         return "\n".join(lines)
 
-    def _stats_text(self) -> str:
+    def _stats_text(self) -> Text:
+        text = Text()
         bars = self.opp.recent_bars
         if not bars:
-            return "STATISTIQUES\n aucune donnée"
+            text.append("STATISTIQUES\n", style="bold #E8B45D")
+            text.append(" aucune donnée", style="#8A8680")
+            return text
         last = bars[-1]
         d1 = _pct_change(bars, 1)
         d5 = _pct_change(bars, 5)
@@ -234,76 +237,168 @@ class DetailScreen(Screen):
         vols = [b.volume for b in bars[-20:]]
         avg_vol = sum(vols) / len(vols) if vols else 0
 
-        lines = [
-            "STATISTIQUES",
-            f" · Dernière clôture     {_fmt_num(last.close)}   {last.date.isoformat()}",
-            f" · Jour                 {_fmt_pct(d1)}",
-            f" · Semaine (5j)         {_fmt_pct(d5)}",
-            f" · Mois (20j)           {_fmt_pct(d20)}",
-            f" · Trimestre (60j)      {_fmt_pct(d60)}",
-            f" · Année (252j)         {_fmt_pct(d252)}",
-            "",
-            f" · Vol. annualisée 20j  {hv20:>9.1f}%" if hv20 is not None else " · Vol. annualisée 20j    n/a",
-            f" · Volume moyen 20j     {avg_vol/1e6:>8.2f}M",
-            "",
-            f" · Plage 52 semaines    {_fmt_num(lo52)} → {_fmt_num(hi52)}",
-            f"   {_pos_bar(pos52)}  position {pos52:.0f}%",
-        ]
-        return "\n".join(lines)
-
-    def _valuation_text(self) -> str:
-        m = self.opp.meta
-        if not m:
-            return ("VALORISATION & RATIOS\n"
-                    " (métadonnées non chargées — appuie sur F pour forcer le chargement)")
-
-        def val(v: float | None, unit: str = "") -> str:
-            """Montant complet avec espace séparateur de milliers."""
+        def append_perf(label: str, v: float | None) -> None:
+            text.append(f" · {label:<21}")
             if v is None:
-                return "—"
-            return f"{_fmt_full_int(v)}{unit}"
+                text.append(" n/a\n", style="#8A8680")
+                return
+            style = "#7FB069" if v > 0 else ("#C97064" if v < 0 else "")
+            s = f"{v:+6.2f}%"
+            if style:
+                text.append(s, style=style)
+            else:
+                text.append(s)
+            text.append("\n")
 
-        def ratio(v: float | None) -> str:
-            """Ratio numérique 2 décimales."""
-            return f"{v:.2f}" if v is not None else "—"
+        text.append("STATISTIQUES\n", style="bold #E8B45D")
+        text.append(f" · Dernière clôture     {_fmt_num(last.close)}   {last.date.isoformat()}\n")
+        append_perf("Jour", d1)
+        append_perf("Semaine (5j)", d5)
+        append_perf("Mois (20j)", d20)
+        append_perf("Trimestre (60j)", d60)
+        append_perf("Année (252j)", d252)
+        text.append("\n")
+        if hv20 is not None:
+            text.append(f" · Vol. annualisée 20j  {hv20:>9.1f}%\n")
+        else:
+            text.append(" · Vol. annualisée 20j    n/a\n", style="#8A8680")
+        text.append(f" · Volume moyen 20j     {avg_vol/1e6:>8.2f}M\n")
+        text.append("\n")
+        text.append(f" · Plage 52 semaines    {_fmt_num(lo52)} → {_fmt_num(hi52)}\n")
+        text.append(f"   {_pos_bar(pos52)}  position {pos52:.0f}%")
+        return text
 
-        def pct(v: float | None) -> str:
-            return f"{v * 100:.2f}%" if v is not None else "—"
+    # Seuils bon / mauvais pour la valorisation (valeurs indicatives, pas absolues).
+    # Format : champ → (good_max, bad_min) pour "bas = bon"
+    #     ou : champ → (good_min, bad_max) pour "haut = bon", tag 'high'
+    _VAL_RULES = {
+        # bas = bon (valorisation pure)
+        "trailing_pe":     ("low", 15, 30),
+        "forward_pe":      ("low", 15, 25),
+        "peg_ratio":       ("low", 1.0, 2.0),
+        "price_to_book":   ("low", 2.0, 5.0),
+        "price_to_sales":  ("low", 2.0, 8.0),
+        "ev_to_ebitda":    ("low", 10, 20),
+        "payout_ratio":    ("low", 0.70, 1.0),
+        "debt_to_equity":  ("low", 100, 300),  # yfinance renvoie en %, d/e=100 = 1:1
+        # haut = bon (rentabilité, croissance, dividende)
+        "gross_margin":     ("high", 0.40, 0.15),
+        "operating_margin": ("high", 0.20, 0.05),
+        "profit_margin":    ("high", 0.15, 0.03),
+        "return_on_equity": ("high", 0.15, 0.05),
+        "return_on_assets": ("high", 0.08, 0.02),
+        "revenue_growth":   ("high", 0.10, 0.00),
+        "earnings_growth":  ("high", 0.10, 0.00),
+        "dividend_yield":   ("high", 0.03, 0.00),
+        "current_ratio":    ("high", 1.5, 1.0),
+        "quick_ratio":      ("high", 1.0, 0.5),
+    }
 
+    def _classify_ratio(self, field: str, value: float | None) -> str:
+        """Retourne un style Rich ('#7FB069' vert, '#C97064' rouge, '' neutre)."""
+        if value is None:
+            return ""
+        rule = self._VAL_RULES.get(field)
+        if not rule:
+            return ""
+        direction, threshold_good, threshold_bad = rule
+        if direction == "low":
+            if value <= threshold_good:
+                return "#7FB069"
+            if value >= threshold_bad:
+                return "#C97064"
+            return ""
+        # high
+        if value >= threshold_good:
+            return "#7FB069"
+        if value <= threshold_bad:
+            return "#C97064"
+        return ""
+
+    def _valuation_text(self) -> Text:
+        m = self.opp.meta
+        text = Text()
+        if not m:
+            text.append("VALORISATION & RATIOS\n", style="bold #E8B45D")
+            text.append(" (métadonnées non chargées — appuie sur F pour forcer le chargement)",
+                        style="#8A8680")
+            return text
+
+        def append_val(v: float | None, unit: str = "") -> None:
+            if v is None:
+                text.append("—")
+            else:
+                text.append(f"{_fmt_full_int(v)}{unit}")
+
+        def append_ratio(field: str, v: float | None) -> None:
+            color = self._classify_ratio(field, v)
+            s = f"{v:.2f}" if v is not None else "—"
+            if color:
+                text.append(s, style=color)
+            else:
+                text.append(s)
+
+        def append_pct(field: str, v: float | None) -> None:
+            color = self._classify_ratio(field, v)
+            s = f"{v * 100:.2f}%" if v is not None else "—"
+            if color:
+                text.append(s, style=color)
+            else:
+                text.append(s)
+
+        reco_key = (m.recommendation or "").lower()
         reco_fr = {
             "strong_buy": "achat fort", "buy": "achat",
             "hold": "conserver", "sell": "vendre",
             "strong_sell": "vente forte", "none": "—", "": "—",
-        }.get((m.recommendation or "").lower(), m.recommendation or "—")
+        }.get(reco_key, m.recommendation or "—")
+        reco_color = {
+            "strong_buy": "#7FB069", "buy": "#7FB069",
+            "hold": "", "sell": "#C97064", "strong_sell": "#C97064",
+        }.get(reco_key, "")
 
-        lines = [
-            "VALORISATION & RATIOS",
-            "",
-            " VALORISATION",
-            f"  · Capitalisation           {val(m.market_cap, f' {m.currency}')}",
-            f"  · Valeur d'entreprise      {val(m.enterprise_value, f' {m.currency}')}",
-            f"  · PER historique           {ratio(m.trailing_pe)}",
-            f"  · PER prévisionnel         {ratio(m.forward_pe)}",
-            f"  · Ratio PEG                {ratio(m.peg_ratio)}",
-            f"  · Cours / Valeur comptable {ratio(m.price_to_book)}",
-            f"  · Cours / Chiffre d'aff.   {ratio(m.price_to_sales)}",
-            f"  · VE / EBITDA              {ratio(m.ev_to_ebitda)}",
-            "",
-            " RENTABILITÉ                                 CROISSANCE (sur un an glissant)",
-            f"  · Marge brute              {pct(m.gross_margin):<10}       · Croissance CA        {pct(m.revenue_growth)}",
-            f"  · Marge opérationnelle     {pct(m.operating_margin):<10}       · Croissance résultat  {pct(m.earnings_growth)}",
-            f"  · Marge nette              {pct(m.profit_margin)}",
-            f"  · ROE (rentab. capitaux)   {pct(m.return_on_equity)}",
-            f"  · ROA (rentab. actifs)     {pct(m.return_on_assets)}",
-            "",
-            " SOLIDITÉ BILAN                              DIVIDENDE & ANALYSTES",
-            f"  · Trésorerie totale        {val(m.total_cash, f' {m.currency}'):<30}  · Rendement dividende  {pct(m.dividend_yield)}",
-            f"  · Dette totale             {val(m.total_debt, f' {m.currency}'):<30}  · Taux de distribution {pct(m.payout_ratio)}",
-            f"  · Dette / Fonds propres    {ratio(m.debt_to_equity):<30}  · Recommandation       {reco_fr}",
-            f"  · Liquidité générale       {ratio(m.current_ratio):<30}  · Objectif analystes   {_fmt_full_or_decimal(m.target_mean_price)} ({m.number_analysts or '—'} analystes)",
-            f"  · Liquidité immédiate      {ratio(m.quick_ratio)}",
-        ]
-        return "\n".join(lines)
+        text.append("VALORISATION & RATIOS\n\n", style="bold #E8B45D")
+
+        text.append(" VALORISATION\n", style="#8A8680")
+        text.append(f"  · Capitalisation           ");         append_val(m.market_cap, f" {m.currency}"); text.append("\n")
+        text.append(f"  · Valeur d'entreprise      ");         append_val(m.enterprise_value, f" {m.currency}"); text.append("\n")
+        text.append(f"  · PER historique           ");         append_ratio("trailing_pe", m.trailing_pe); text.append("\n")
+        text.append(f"  · PER prévisionnel         ");         append_ratio("forward_pe", m.forward_pe); text.append("\n")
+        text.append(f"  · Ratio PEG                ");         append_ratio("peg_ratio", m.peg_ratio); text.append("\n")
+        text.append(f"  · Cours / Valeur comptable ");         append_ratio("price_to_book", m.price_to_book); text.append("\n")
+        text.append(f"  · Cours / Chiffre d'aff.   ");         append_ratio("price_to_sales", m.price_to_sales); text.append("\n")
+        text.append(f"  · VE / EBITDA              ");         append_ratio("ev_to_ebitda", m.ev_to_ebitda); text.append("\n")
+
+        text.append("\n RENTABILITÉ\n", style="#8A8680")
+        text.append(f"  · Marge brute              ");         append_pct("gross_margin", m.gross_margin); text.append("\n")
+        text.append(f"  · Marge opérationnelle     ");         append_pct("operating_margin", m.operating_margin); text.append("\n")
+        text.append(f"  · Marge nette              ");         append_pct("profit_margin", m.profit_margin); text.append("\n")
+        text.append(f"  · ROE (rentab. capitaux)   ");         append_pct("return_on_equity", m.return_on_equity); text.append("\n")
+        text.append(f"  · ROA (rentab. actifs)     ");         append_pct("return_on_assets", m.return_on_assets); text.append("\n")
+
+        text.append("\n CROISSANCE (sur un an glissant)\n", style="#8A8680")
+        text.append(f"  · Croissance CA            ");         append_pct("revenue_growth", m.revenue_growth); text.append("\n")
+        text.append(f"  · Croissance résultat      ");         append_pct("earnings_growth", m.earnings_growth); text.append("\n")
+
+        text.append("\n SOLIDITÉ BILAN\n", style="#8A8680")
+        text.append(f"  · Trésorerie totale        ");         append_val(m.total_cash, f" {m.currency}"); text.append("\n")
+        text.append(f"  · Dette totale             ");         append_val(m.total_debt, f" {m.currency}"); text.append("\n")
+        text.append(f"  · Dette / Fonds propres    ");         append_ratio("debt_to_equity", m.debt_to_equity); text.append("\n")
+        text.append(f"  · Liquidité générale       ");         append_ratio("current_ratio", m.current_ratio); text.append("\n")
+        text.append(f"  · Liquidité immédiate      ");         append_ratio("quick_ratio", m.quick_ratio); text.append("\n")
+
+        text.append("\n DIVIDENDE & ANALYSTES\n", style="#8A8680")
+        text.append(f"  · Rendement dividende      ");         append_pct("dividend_yield", m.dividend_yield); text.append("\n")
+        text.append(f"  · Taux de distribution     ");         append_pct("payout_ratio", m.payout_ratio); text.append("\n")
+        text.append(f"  · Recommandation analystes ")
+        if reco_color:
+            text.append(reco_fr, style=reco_color)
+        else:
+            text.append(reco_fr)
+        text.append("\n")
+        text.append(f"  · Objectif analystes moyen ")
+        text.append(f"{_fmt_full_or_decimal(m.target_mean_price)} ({m.number_analysts or '—'} analystes)")
+        return text
 
 # Direction préférentielle par ligne d'état financier :
     #   "up_good"   : hausse = bonne nouvelle (CA, marge, résultat net, FCF…)
@@ -381,25 +476,25 @@ class DetailScreen(Screen):
     def _translate_label(self, label: str) -> str:
         return self.FR_LABELS.get(label, label)
 
-    def _arrow_for_direction(
+    def _color_for_direction(
         self, current: float | None, previous: float | None, preference: str
-    ) -> tuple[str, str]:
-        """Retourne (char_fleche, style_Rich) selon évolution current vs previous
+    ) -> str:
+        """Retourne un style Rich selon l'évolution current vs previous
         et la préférence 'up_good' / 'down_good' / 'neutral'.
         """
         if current is None or previous is None or preference == "neutral":
-            return "─", "#8A8680"  # gris neutre
+            return ""
         if abs(current - previous) < 1e-6:
-            return "─", "#8A8680"
+            return ""
         going_up = current > previous
         if preference == "up_good":
-            return ("▲", "#7FB069") if going_up else ("▼", "#C97064")
+            return "#7FB069" if going_up else "#C97064"
         if preference == "down_good":
-            return ("▼", "#7FB069") if not going_up else ("▲", "#C97064")
-        return "─", "#8A8680"
+            return "#7FB069" if not going_up else "#C97064"
+        return ""
 
     def _render_financial_block(self, title: str, lines) -> Text:
-        """Rend un bloc financier en Rich Text avec flèches colorées."""
+        """Rend un bloc financier en Rich Text avec chiffres colorés + % variation."""
         f = self.opp.fundamentals
         text = Text()
         if not f or not lines:
@@ -413,9 +508,9 @@ class DetailScreen(Screen):
         title_full = f"{title}" + (f" · en {currency}" if currency else "")
 
         text.append(f"{title_full}\n", style="bold #E8B45D")
-        # Header : label vide 34 chars + 3 colonnes périodes (arrow 3 + num 15 = 18 chars)
+        # Cell : chiffre (15) + 2 espaces + % (7) = 24 chars par colonne
         text.append("  " + " " * 34
-                    + "  ".join(f"{p:>18}" for p in periods) + "\n",
+                    + "  ".join(f"{p:>24}" for p in periods) + "\n",
                     style="#8A8680")
 
         for line in lines:
@@ -426,11 +521,20 @@ class DetailScreen(Screen):
             text.append(f"  · {label_fr:<32}")
             for i, v in enumerate(vals):
                 prev = vals[i + 1] if i + 1 < len(vals) else None
-                arrow, arrow_style = self._arrow_for_direction(v, prev, preference)
+                color = self._color_for_direction(v, prev, preference)
                 num = "—" if v is None else _fmt_full_int(v)
+                # % variation vs période précédente
+                if v is None or prev is None or abs(prev) < 1e-9:
+                    pct_str = "       "
+                else:
+                    pct = (v - prev) / abs(prev) * 100
+                    pct_str = f"{pct:+6.1f}%"
+                cell = f"{num:>15}  {pct_str}"
                 text.append("  ")
-                text.append(f" {arrow} ", style=arrow_style)
-                text.append(f"{num:>15}")
+                if color:
+                    text.append(cell, style=color)
+                else:
+                    text.append(cell)
             text.append("\n")
         return text
 
