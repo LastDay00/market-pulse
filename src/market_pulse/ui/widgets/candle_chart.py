@@ -85,8 +85,8 @@ def render_candlestick_chart(
         plt.hline(trade_plan.target, color=SAUGE_RGB)
         plt.hline(trade_plan.stop, color=TERRA_RGB)
 
-    # Grille horizontale en pointillés (Bloomberg feel)
-    plt.grid(True, True)
+    # Pas de grille (fond uni, plus propre en terminal)
+    plt.grid(False, False)
 
     text.append(Text.from_ansi(plt.build()))
     text.append("\n")
