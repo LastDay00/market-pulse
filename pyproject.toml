@@ -12,6 +12,9 @@ dependencies = [
     "textual>=0.75",
     "plotext>=5.2",
     "deep-translator>=1.11",
+    "matplotlib>=3.8",
+    "pillow>=10.0",
+    "textual-image>=0.6",
 ]
 
 [project.optional-dependencies]

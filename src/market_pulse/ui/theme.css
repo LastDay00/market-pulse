@@ -67,7 +67,32 @@ DataTable > .datatable--cursor {
     padding: 0 1;
 }
 
-/* Chart pleine largeur, grand comme TradingView */
+/* Chart header (stats) + image + légende, bordure unique */
+#chart-header {
+    color: #E8E6E3;
+    padding: 0 1;
+    margin: 0;
+    height: 1;
+}
+
+#chart-image {
+    width: 100%;
+    height: 28;
+    margin-bottom: 0;
+}
+
+#chart-legend {
+    color: #8A8680;
+    padding: 0 1;
+    margin: 0 0 1 0;
+    height: 1;
+}
+
+.panel-header {
+    background: #0A0A0B;
+}
+
+/* Fallback si matplotlib/textual-image échoue */
 #chart-panel {
     width: 100%;
     height: 36;

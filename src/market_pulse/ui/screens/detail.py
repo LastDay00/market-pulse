@@ -1,17 +1,21 @@
 """Écran détail : chart candlestick + signaux + trade plan + stats."""
 import math
+import os
+import tempfile
 
 from rich.text import Text
 from textual import work
 from textual.app import ComposeResult
 from textual.binding import Binding
-from textual.containers import Horizontal, VerticalScroll
+from textual.containers import Container, Horizontal, VerticalScroll
 from textual.screen import Screen
 from textual.widgets import Footer, Header, Static
+from textual_image.widget import Image as TxtImage
 
 from market_pulse.data.models import Bar
 from market_pulse.engine.scanner import Opportunity, enrich_opportunity
 from market_pulse.ui.widgets.candle_chart import render_candlestick_chart
+from market_pulse.ui.widgets.chart_image import save_chart_to_temp
 
 SAUGE = (127, 176, 105)
 TERRA = (201, 112, 100)
@@ -128,15 +132,31 @@ class DetailScreen(Screen):
         super().__init__()
         self.opp = opp
         self._loading = False
+        # Chart PNG généré au mount, fichier temp
+        self._chart_png_path = None
 
     def compose(self) -> ComposeResult:
         yield Header(show_clock=True)
         with VerticalScroll(id="detail-scroll"):
             yield Static(self._title_line(), classes="highlight-amber", id="title")
             yield Static(self._subtitle_line(), id="subtitle")
-            # Row 1 : Chart PLEINE LARGEUR (grand comme TradingView)
-            yield Static(_render_candles(self.opp),
-                         id="chart-panel", classes="panel")
+            # Génère le chart PNG (matplotlib) et l'affiche via textual-image
+            # qui détecte le protocole terminal (iTerm2, Kitty, Sixel, halfblocks)
+            try:
+                self._chart_png_path = save_chart_to_temp(
+                    self.opp.recent_bars[-120:] if self.opp.recent_bars else [],
+                    self.opp.trade_plan,
+                    width_px=1800, height_px=700,
+                )
+                yield Static(self._chart_header_text(),
+                             id="chart-header", classes="panel-header")
+                yield TxtImage(str(self._chart_png_path), id="chart-image")
+                yield Static(self._chart_legend_text(),
+                             id="chart-legend", classes="panel-header")
+            except Exception as e:
+                # Fallback plotext si matplotlib/textual-image cassent
+                yield Static(_render_candles(self.opp),
+                             id="chart-panel", classes="panel")
             # Row 2 : Signaux | Plan de trade | Stats (3 colonnes équilibrées)
             with Horizontal(id="info-row"):
                 yield Static(self._signals_text(),
@@ -166,6 +186,54 @@ class DetailScreen(Screen):
             yield Static(self._cashflow_q_text(),
                          id="cashflow-q-panel", classes="panel")
         yield Footer()
+
+    def _chart_header_text(self) -> Text:
+        """Header au-dessus du chart : stats clés (Dernier / Haut / Bas / Moyenne)."""
+        bars = self.opp.recent_bars[-120:] if self.opp.recent_bars else []
+        text = Text()
+        if not bars:
+            text.append("—", style="#8A8680")
+            return text
+        closes = [b.close for b in bars]
+        highs = [b.high for b in bars]
+        lows = [b.low for b in bars]
+        from statistics import mean
+        last = closes[-1]
+        hi_val = max(highs)
+        hi_date = bars[highs.index(hi_val)].date.isoformat()
+        lo_val = min(lows)
+        lo_date = bars[lows.index(lo_val)].date.isoformat()
+        avg_val = mean(closes)
+        text.append(" Dernier ", style="#8A8680")
+        text.append(f"{last:>8.2f}", style="#E8E6E3")
+        text.append("     ▲ Haut ", style="#8A8680")
+        text.append(f"{hi_val:>8.2f}", style="#7FB069")
+        text.append(f" ({hi_date})", style="#8A8680")
+        text.append("     ▼ Bas ", style="#8A8680")
+        text.append(f"{lo_val:>8.2f}", style="#C97064")
+        text.append(f" ({lo_date})", style="#8A8680")
+        text.append("     Moyenne ", style="#8A8680")
+        text.append(f"{avg_val:>8.2f}", style="#E8B45D")
+        return text
+
+    def _chart_legend_text(self) -> Text:
+        """Légende sous le chart pour identifier les 3 lignes horizontales."""
+        text = Text()
+        text.append(" Lignes : ", style="#8A8680")
+        text.append("entry ", style="#E8E6E3")
+        text.append("·  ", style="#8A8680")
+        text.append("TP ", style="#7FB069")
+        text.append("·  ", style="#8A8680")
+        text.append("SL", style="#C97064")
+        return text
+
+    def on_unmount(self) -> None:
+        """Nettoie le fichier PNG temporaire à la fermeture de l'écran."""
+        if self._chart_png_path and self._chart_png_path.exists():
+            try:
+                self._chart_png_path.unlink()
+            except Exception:
+                pass
 
     def _title_line(self) -> str:
         o = self.opp
