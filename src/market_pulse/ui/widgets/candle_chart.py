@@ -1,8 +1,11 @@
-"""Candlestick chart via plotext (theme 'dark') + stats header + volume bars.
+"""Chart inline simple et propre pour Terminal.app.
 
-Re-bascule sur plotext après le détour matplotlib/rich-pixels : avec le thème
-'dark' et un plotsize correct, plotext produit des vraies bougies vertes/rouges
-bien propres sur fond noir.
+Terminal.app (macOS de base) ne supporte aucun protocole image inline
+(iTerm2/Kitty/Sixel). La meilleure qualité atteignable dans ces limites :
+- Ligne pure en braille (4x plus de résolution verticale qu'un bloc)
+- Pas de remplissage (le fill en terminal donne toujours un aspect mosaïque)
+- Lignes horizontales de référence visibles
+- Pour un vrai chart pixel-perfect, la touche G ouvre le PNG dans Preview.app
 """
 from __future__ import annotations
 
@@ -50,35 +53,35 @@ def _stats_header(bars: list[Bar]) -> Text:
 def render_candlestick_chart(
     bars: list[Bar],
     trade_plan=None,
-    width: int = 70,
-    chart_height: int = 18,
+    width: int = 170,
+    chart_height: int = 22,
     volume_height: int = 0,
 ) -> Group:
-    """Rend un vrai candlestick plotext + volume bars + stats."""
+    """Rend un line chart braille avec lignes de référence colorées.
+
+    Accept en terminal : pas d'image pixel-perfect possible, mais la ligne
+    braille est ce qu'il y a de plus smooth en cell-based rendering.
+    Le user peut appuyer G pour voir le vrai chart dans Preview.app.
+    """
     if not bars:
         return Group(Text("no data", style=MUTED))
 
-    # Nombre de bougies en fonction de la largeur : ~3 chars par bougie pour que
-    # les bodies aient de la place (comme dans l'article plotext)
-    target_candles = max(30, min(120, width // 3))
-    visible = bars[-target_candles:]
+    closes = [b.close for b in bars]
 
-    # ---- Chart candlestick ----
+    # --- Main chart : line braille smooth ---
     plt.clf()
-    plt.theme("dark")
+    plt.theme("pro")
     plt.plotsize(width, chart_height)
     plt.date_form("Y-m-d")
 
-    dates = [b.date.strftime("%Y-%m-%d") for b in visible]
-    data = {
-        "Open":  [b.open for b in visible],
-        "High":  [b.high for b in visible],
-        "Low":   [b.low for b in visible],
-        "Close": [b.close for b in visible],
-    }
-    plt.candlestick(dates, data)
+    dates = [b.date.strftime("%Y-%m-%d") for b in bars]
 
-    # Lignes de référence entry/TP/SL
+    trend_up = closes[-1] >= closes[0]
+    line_color = "green" if trend_up else "red"
+
+    plt.plot(dates, closes, color=line_color, marker="braille")
+
+    # Lignes de référence par-dessus
     if trade_plan is not None:
         plt.hline(trade_plan.entry, color="white")
         plt.hline(trade_plan.target, color="green")
@@ -86,33 +89,15 @@ def render_candlestick_chart(
 
     chart_text = Text.from_ansi(plt.build())
 
-    # ---- Volume bars ----
-    plt.clf()
-    plt.theme("dark")
-    plt.plotsize(width, 5)
-    vols = [b.volume for b in visible]
-    up_x = [i for i, b in enumerate(visible) if b.close >= b.open]
-    up_v = [visible[i].volume for i in up_x]
-    dn_x = [i for i, b in enumerate(visible) if b.close < b.open]
-    dn_v = [visible[i].volume for i in dn_x]
-    if up_x:
-        plt.bar(up_x, up_v, color="green", marker="sd", width=0.8)
-    if dn_x:
-        plt.bar(dn_x, dn_v, color="red", marker="sd", width=0.8)
-    plt.xticks([], [])
-    vol_text = Text.from_ansi(plt.build())
+    # --- Astuce pour voir un vrai chart ---
+    tip = Text()
+    tip.append(" 💡  Pour un vrai chart pixel-perfect, appuie sur ", style=MUTED)
+    tip.append("G", style=f"bold {AMBRE}")
+    tip.append("  (ouvre Preview.app avec un rendu haute résolution)", style=MUTED)
 
-    # ---- Légende volume ----
+    # --- Légende lignes ---
     legend = Text()
-    max_vol = max(vols)
-    legend.append(" VOL  max ", style=MUTED)
-    if max_vol >= 1e9:
-        legend.append(f"{max_vol/1e9:.2f} Md", style=MUTED)
-    elif max_vol >= 1e6:
-        legend.append(f"{max_vol/1e6:.2f} M", style=MUTED)
-    else:
-        legend.append(f"{max_vol:,.0f}".replace(",", " "), style=MUTED)
-    legend.append("     · Lignes : ", style=MUTED)
+    legend.append(" Lignes : ", style=MUTED)
     legend.append("entry ", style=OFF_WHITE)
     legend.append("·  ", style=MUTED)
     legend.append("TP ", style=SAUGE)
@@ -122,6 +107,6 @@ def render_candlestick_chart(
     return Group(
         _stats_header(bars),
         chart_text,
-        vol_text,
         legend,
+        tip,
     )

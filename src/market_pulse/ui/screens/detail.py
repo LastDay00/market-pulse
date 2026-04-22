@@ -142,23 +142,11 @@ class DetailScreen(Screen):
         with VerticalScroll(id="detail-scroll"):
             yield Static(self._title_line(), classes="highlight-amber", id="title")
             yield Static(self._subtitle_line(), id="subtitle")
-            # Génère le chart PNG (matplotlib) et l'affiche via textual-image
-            # qui détecte le protocole terminal (iTerm2, Kitty, Sixel, halfblocks)
-            try:
-                self._chart_png_path = save_chart_to_temp(
-                    self.opp.recent_bars[-120:] if self.opp.recent_bars else [],
-                    self.opp.trade_plan,
-                    width_px=1800, height_px=700,
-                )
-                yield Static(self._chart_header_text(),
-                             id="chart-header", classes="panel-header")
-                yield TxtImage(str(self._chart_png_path), id="chart-image")
-                yield Static(self._chart_legend_text(),
-                             id="chart-legend", classes="panel-header")
-            except Exception as e:
-                # Fallback plotext si matplotlib/textual-image cassent
-                yield Static(_render_candles(self.opp),
-                             id="chart-panel", classes="panel")
+            # Chart inline : line chart braille (le plus smooth possible en
+            # cell-based). Pour un vrai rendu pixel-perfect, la touche G
+            # ouvre le PNG matplotlib dans Preview.app.
+            yield Static(_render_candles(self.opp),
+                         id="chart-panel", classes="panel")
             # Row 2 : Signaux | Plan de trade | Stats (3 colonnes équilibrées)
             with Horizontal(id="info-row"):
                 yield Static(self._signals_text(),
