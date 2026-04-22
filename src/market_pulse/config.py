@@ -18,7 +18,7 @@ class UserSettings:
     horizon: str = "1w"
     min_rr: float = 2.0
     direction_filter: str = "both"       # "long" | "short" | "both"
-    blend_fundamentals: bool = True      # top 20 : blend score tech + fonda
+    scoring_mode: str = "blended"         # "technical" | "blended" | "fundamental"
 
     @classmethod
     def load(cls) -> "UserSettings":
@@ -26,7 +26,10 @@ class UserSettings:
             return cls()
         try:
             data = json.loads(SETTINGS_FILE.read_text())
-            # Ignore les clés inconnues (compat forward)
+            # Compat : ancien toggle bool -> nouveau champ string
+            if "blend_fundamentals" in data and "scoring_mode" not in data:
+                data["scoring_mode"] = "blended" if data["blend_fundamentals"] else "technical"
+                data.pop("blend_fundamentals", None)
             known = {f.name for f in cls.__dataclass_fields__.values()}
             return cls(**{k: v for k, v in data.items() if k in known})
         except Exception:

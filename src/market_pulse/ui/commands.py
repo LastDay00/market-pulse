@@ -55,14 +55,18 @@ class SettingsProvider(Provider):
                 "Filtre : seulement les trades avec reward/risk ≥ seuil",
             ))
 
-        # --- Fundamentals blend ---
+        # --- Scoring mode ---
         commands.extend([
-            ("Scoring · Activer blend fondamental (80% tech + 20% fonda)",
-             partial(self._set_blend, True),
-             "Le score tient compte des ratios financiers sur le top 20"),
-            ("Scoring · Technique pur (désactive les fondamentaux)",
-             partial(self._set_blend, False),
-             "Score basé uniquement sur les signaux techniques"),
+            ("Scoring · Technique pur",
+             partial(self._set_scoring, "technical"),
+             "Score 100% basé sur les signaux techniques (RSI, MACD, volumes…)"),
+            ("Scoring · Blend tech + fonda (80/20)",
+             partial(self._set_scoring, "blended"),
+             "Top 20 re-scoré en mixant technique (80%) et fondamentaux (20%)"),
+            ("Scoring · Fondamental pur",
+             partial(self._set_scoring, "fundamental"),
+             "Score = ratios financiers uniquement — enrichit 200 tickers "
+             "(scan +1-3 min). Idéal pour l'investissement long terme."),
         ])
 
         # --- Actions globales ---
@@ -121,15 +125,14 @@ class SettingsProvider(Provider):
         label = {"both": "long + short", "long": "long", "short": "short"}[direction]
         self.app.notify(f"Filtre direction → {label}")
 
-    def _set_blend(self, enabled: bool) -> None:
+    def _set_scoring(self, mode: str) -> None:
         s = UserSettings.load()
-        s.blend_fundamentals = enabled
+        s.scoring_mode = mode
         s.save()
-        self.app.notify(
-            f"Blend fondamental → {'activé' if enabled else 'désactivé'}"
-            f" · relance du scan …",
-            timeout=3.0,
-        )
+        label = {"technical": "technique pur",
+                 "blended": "blend 80/20",
+                 "fundamental": "fondamental pur"}[mode]
+        self.app.notify(f"Scoring → {label} · relance du scan …", timeout=3.0)
         self.app.exit(return_code=RESCAN_RETURN_CODE)
 
     def _force_refresh(self) -> None:
@@ -142,6 +145,6 @@ class SettingsProvider(Provider):
         self.app.notify(
             f"horizon={s.horizon}  ·  R/R min={s.min_rr}"
             f"  ·  direction={s.direction_filter}"
-            f"  ·  blend={'on' if s.blend_fundamentals else 'off'}",
+            f"  ·  scoring={s.scoring_mode}",
             timeout=10.0,
         )

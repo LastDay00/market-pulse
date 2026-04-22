@@ -25,9 +25,15 @@ async def _do_scan(force_refresh: bool = False, settings: UserSettings | None = 
     _LAST_PROVIDER = provider
 
     mode = "force refresh (cache bypass)" if force_refresh else "cache-aware"
+    scoring_label = {
+        "technical": "technique pur",
+        "blended": "blend tech/fonda 80/20",
+        "fundamental": "fondamental pur",
+    }.get(settings.scoring_mode, settings.scoring_mode)
     print(f"· scanning {len(tickers)} tickers "
           f"(horizon {settings.horizon.upper()}, "
           f"R/R ≥ {settings.min_rr}, "
+          f"scoring {scoring_label}, "
           f"{mode}) ...")
     t0 = time.time()
 
@@ -53,6 +59,7 @@ async def _do_scan(force_refresh: bool = False, settings: UserSettings | None = 
         names=names,
         force_refresh=force_refresh,
         progress_callback=on_progress,
+        scoring_mode=settings.scoring_mode,
     )
     elapsed = time.time() - t0
     print(f"\n· found {len(opps)} opportunities in {elapsed:.1f}s")

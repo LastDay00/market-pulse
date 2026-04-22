@@ -250,6 +250,7 @@ async def scan(
     names: dict[str, str] | None = None,
     force_refresh: bool = False,
     progress_callback=None,
+    scoring_mode: str = "blended",   # "technical" | "blended" | "fundamental"
 ) -> list[Opportunity]:
     if horizon not in ATR_MULTIPLIERS:
         raise ValueError(f"Horizon non supporté : {horizon}")
@@ -291,19 +292,42 @@ async def scan(
     opps = [o for o in results if o is not None]
     opps.sort(key=lambda o: o.score, reverse=True)
 
-    # Enrichissement meta + news pour les top N seulement (coût réseau contenu)
-    top = opps[:enrich_top_n]
-
-    # Blend fundamentals selon settings user
-    try:
-        from market_pulse.config import UserSettings
-        _settings = UserSettings.load()
-        _blend = _settings.blend_fundamentals
-    except Exception:
-        _blend = True
-    await asyncio.gather(
-        *(enrich_opportunity(o, provider, blend_fundamentals=_blend) for o in top)
-    )
+    # Enrichissement selon le mode de scoring :
+    #  - technical   : enrichit juste le top 20 pour l'affichage (score inchangé)
+    #  - blended     : enrichit top 20, blend 80/20 tech+fonda
+    #  - fundamental : enrichit TOUT l'univers, score = fondamental pur, re-sort
+    if scoring_mode == "fundamental":
+        # Plus large mais on limite à ~200 pour ne pas exploser le temps de scan
+        to_enrich = opps[:200]
+        print(f"· mode fondamental pur : enrichissement de {len(to_enrich)} "
+              f"tickers (peut prendre 1-3 min)...")
+        await asyncio.gather(
+            *(enrich_opportunity(o, provider, blend_fundamentals=False)
+              for o in to_enrich)
+        )
+        # Score = fondamental pur (inversé pour les shorts)
+        rescored: list[Opportunity] = []
+        for o in to_enrich:
+            fund = compute_fundamental_score(o.meta)
+            if fund is None:
+                continue
+            if o.trade_plan.direction == "short":
+                fund = 100.0 - fund
+            o.technical_score = o.score  # garde l'ancien pour affichage
+            o.fundamental_score = compute_fundamental_score(o.meta)
+            o.score = fund
+            o.blended = False  # pas un blend, c'est du pur fonda
+            rescored.append(o)
+        rescored.sort(key=lambda o: o.score, reverse=True)
+        cache.close()
+        return rescored
+    else:
+        top = opps[:enrich_top_n]
+        blend = (scoring_mode == "blended")
+        await asyncio.gather(
+            *(enrich_opportunity(o, provider, blend_fundamentals=blend)
+              for o in top)
+        )
 
     cache.close()
     return opps
