@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from functools import partial
 
-from textual.command import Hit, Hits, Provider
+from textual.command import DiscoveryHit, Hit, Hits, Provider
 
 from market_pulse.config import UserSettings
 
@@ -19,9 +19,7 @@ RESCAN_RETURN_CODE = 42
 class SettingsProvider(Provider):
     """Fournisseur de commandes pour la palette Ctrl+P."""
 
-    async def search(self, query: str) -> Hits:
-        matcher = self.matcher(query)
-
+    def _build_commands(self) -> list[tuple[str, callable, str]]:
         commands: list[tuple[str, callable, str]] = []
 
         # --- Horizon ---
@@ -34,8 +32,7 @@ class SettingsProvider(Provider):
             ("5y", "Horizon · 5 ans",      "Investissement long terme"),
             ("10y", "Horizon · 10 ans",    "Buy & hold / retraite"),
         ]:
-            commands.append((label,
-                             partial(self._set_horizon, code), desc))
+            commands.append((label, partial(self._set_horizon, code), desc))
 
         # --- Direction filter ---
         commands.extend([
@@ -77,8 +74,17 @@ class SettingsProvider(Provider):
              self._show_settings,
              "Affiche horizon, R/R min, filtre direction, blend"),
         ])
+        return commands
 
-        for name, cb, help_text in commands:
+    async def discover(self) -> Hits:
+        """Affiché quand la palette s'ouvre sans texte tapé."""
+        for name, cb, help_text in self._build_commands():
+            yield DiscoveryHit(name, cb, help=help_text)
+
+    async def search(self, query: str) -> Hits:
+        """Filtre selon la chaîne tapée par l'utilisateur."""
+        matcher = self.matcher(query)
+        for name, cb, help_text in self._build_commands():
             score = matcher.match(name)
             if score > 0:
                 yield Hit(
