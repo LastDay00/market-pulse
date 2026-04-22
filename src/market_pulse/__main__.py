@@ -11,13 +11,18 @@ from market_pulse.universe.loaders import load_universe
 
 RESCAN_RETURN_CODE = 42
 
+# Provider partagé entre le scan et l'UI (pour les chargements à la demande dans le détail)
+_LAST_PROVIDER: "YFinanceProvider | None" = None
+
 
 async def _do_scan(force_refresh: bool = False):
     ensure_app_dir()
-    # Univers combiné : S&P 500 + Nasdaq 100 + CAC 40 + CAC Next 20 + DAX + FTSE MIB + IBEX 35
+    # Univers combiné : tous les indices configurés dans AVAILABLE_INDICES
     names = load_universe()
     tickers = sorted(names.keys())
     provider = YFinanceProvider(max_concurrency=10)
+    global _LAST_PROVIDER
+    _LAST_PROVIDER = provider
 
     mode = "force refresh (cache bypass)" if force_refresh else "cache-aware"
     print(f"· scanning {len(tickers)} tickers across 7 indices (horizon 1W, {mode}) ...")
@@ -56,7 +61,7 @@ def main() -> int:
     try:
         while True:
             opps = asyncio.run(_do_scan(force_refresh=force_refresh))
-            app = MarketPulseApp(opps)
+            app = MarketPulseApp(opps, provider=_LAST_PROVIDER)
             app.run()
             if app.return_code != RESCAN_RETURN_CODE:
                 return 0

@@ -85,6 +85,29 @@ class Opportunity:
     fundamentals: Fundamentals | None = None
 
 
+async def enrich_opportunity(opp: Opportunity, provider: Provider) -> None:
+    """Fetch meta + news (traduites) + fundamentals et attache à l'Opportunity.
+
+    Utilisé par le scan (top 20) et par l'UI de détail pour charger à la demande
+    un ticker hors top 20.
+    """
+    meta, news, fundamentals = await asyncio.gather(
+        provider.fetch_meta(opp.ticker),
+        provider.fetch_news(opp.ticker, max_items=5),
+        provider.fetch_fundamentals(opp.ticker),
+    )
+    opp.meta = meta
+    opp.fundamentals = fundamentals
+    if news:
+        translated_titles = await _translate_news_titles([n.title for n in news])
+        news = [
+            NewsItem(title=t, publisher=n.publisher,
+                     published=n.published, link=n.link)
+            for n, t in zip(news, translated_titles)
+        ]
+    opp.news = news
+
+
 def _bars_to_df(bars: list[Bar]) -> pd.DataFrame:
     if not bars:
         return pd.DataFrame()
@@ -198,25 +221,7 @@ async def scan(
     # Enrichissement meta + news pour les top N seulement (coût réseau contenu)
     top = opps[:enrich_top_n]
 
-    async def _enrich(opp: Opportunity) -> None:
-        meta, news, fundamentals = await asyncio.gather(
-            provider.fetch_meta(opp.ticker),
-            provider.fetch_news(opp.ticker, max_items=5),
-            provider.fetch_fundamentals(opp.ticker),
-        )
-        opp.meta = meta
-        opp.fundamentals = fundamentals
-        # Traduction FR des titres de news (parallèle)
-        if news:
-            translated_titles = await _translate_news_titles([n.title for n in news])
-            news = [
-                NewsItem(title=t, publisher=n.publisher,
-                         published=n.published, link=n.link)
-                for n, t in zip(news, translated_titles)
-            ]
-        opp.news = news
-
-    await asyncio.gather(*(_enrich(o) for o in top))
+    await asyncio.gather(*(enrich_opportunity(o, provider) for o in top))
 
     cache.close()
     return opps

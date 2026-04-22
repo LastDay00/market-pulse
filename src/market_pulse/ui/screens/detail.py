@@ -2,6 +2,7 @@
 import math
 
 from rich.text import Text
+from textual import work
 from textual.app import ComposeResult
 from textual.binding import Binding
 from textual.containers import Horizontal, VerticalScroll
@@ -9,7 +10,7 @@ from textual.screen import Screen
 from textual.widgets import Footer, Header, Static
 
 from market_pulse.data.models import Bar
-from market_pulse.engine.scanner import Opportunity
+from market_pulse.engine.scanner import Opportunity, enrich_opportunity
 from market_pulse.ui.widgets.candle_chart import render_candlestick_chart
 
 SAUGE = (127, 176, 105)
@@ -93,13 +94,15 @@ def _format_score_bar(score: float, width: int = 6) -> str:
 
 class DetailScreen(Screen):
     BINDINGS = [
-        Binding("escape", "app.pop_screen", "Back", show=True),
-        Binding("q", "app.quit", "Quit", show=True),
+        Binding("escape", "app.pop_screen", "Retour", show=True),
+        Binding("f", "load_data", "Charger/Rafraîchir données", show=True),
+        Binding("q", "app.quit", "Quitter", show=True),
     ]
 
     def __init__(self, opp: Opportunity) -> None:
         super().__init__()
         self.opp = opp
+        self._loading = False
 
     def compose(self) -> ComposeResult:
         yield Header(show_clock=True)
@@ -138,10 +141,49 @@ class DetailScreen(Screen):
         name = (o.meta.long_name if o.meta else None) or o.name or ""
         name_part = f"  ·  {name}" if name else ""
         direction_fr = "LONG" if o.trade_plan.direction == "long" else "SHORT"
+        status = "  ·  ⏳ chargement…" if self._loading else ""
         return (f"{o.ticker}{name_part}"
                 f"  ·  {direction_fr}"
                 f"  ·  SCORE {o.score:.1f} / 100"
-                f"  ·  horizon {o.horizon.upper()}")
+                f"  ·  horizon {o.horizon.upper()}{status}")
+
+    def action_load_data(self) -> None:
+        """Touche F : charge meta + news + fondamentaux à la demande."""
+        if self._loading:
+            return
+        provider = getattr(self.app, "provider", None)
+        if provider is None:
+            self.notify("Aucun provider disponible", severity="error")
+            return
+        self._loading = True
+        self._refresh_all_panels()  # affiche l'état "chargement…"
+        self._fetch_worker()
+
+    @work(exclusive=True)
+    async def _fetch_worker(self) -> None:
+        """Worker Textual : enrichit l'Opportunity puis rerend les panneaux."""
+        provider = self.app.provider
+        try:
+            await enrich_opportunity(self.opp, provider)
+        except Exception as e:
+            self.notify(f"Erreur chargement : {e}", severity="error")
+        finally:
+            self._loading = False
+            self._refresh_all_panels()
+
+    def _refresh_all_panels(self) -> None:
+        """Rerend tous les panneaux dont le contenu dépend de meta/news/fundamentals."""
+        try:
+            self.query_one("#title", Static).update(self._title_line())
+            self.query_one("#subtitle", Static).update(self._subtitle_line())
+            self.query_one("#news-panel", Static).update(self._news_text())
+            self.query_one("#valuation-panel", Static).update(self._valuation_text())
+            self.query_one("#income-panel", Static).update(self._income_text())
+            self.query_one("#balance-panel", Static).update(self._balance_text())
+            self.query_one("#cashflow-panel", Static).update(self._cashflow_text())
+        except Exception:
+            # Les widgets peuvent ne pas être encore montés si on appelle tôt
+            pass
 
     def _subtitle_line(self) -> str:
         if not self.opp.meta:
