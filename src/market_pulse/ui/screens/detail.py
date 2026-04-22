@@ -26,15 +26,15 @@ OFF_WHITE = (232, 230, 227)
 
 def _render_candles(opp: Opportunity, width: int | None = None,
                      chart_height: int | None = None) -> Text:
-    """Chart inline, demi-largeur du terminal (proportions conservées)."""
+    """Chart inline, quart de largeur du terminal (proportions conservées)."""
     if width is None:
         import shutil
         term_w = shutil.get_terminal_size((180, 50)).columns
-        # Demi-largeur du terminal moins bordures/padding
-        width = max(60, (term_w - 8) // 2)
+        # Quart-largeur du terminal moins bordures/padding
+        width = max(50, (term_w - 8) // 4)
     if chart_height is None:
-        # Proportion ~7:1 (chart plus large que haut)
-        chart_height = max(10, width // 7)
+        # Proportion ~5:1 (chart plus large que haut, plus carré quand petit)
+        chart_height = max(8, width // 5)
     bars = opp.recent_bars[-120:] if opp.recent_bars else []
     return render_candlestick_chart(
         bars=bars, trade_plan=opp.trade_plan,

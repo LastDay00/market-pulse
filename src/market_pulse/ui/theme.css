@@ -92,9 +92,9 @@ DataTable > .datatable--cursor {
     background: #0A0A0B;
 }
 
-/* Chart inline demi-largeur (proportions conservées) */
+/* Chart inline quart de largeur (proportions conservées) */
 #chart-panel {
-    width: 50%;
+    width: 25%;
     height: auto;
     margin-bottom: 1;
 }

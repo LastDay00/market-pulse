@@ -95,14 +95,21 @@ def render_candlestick_chart(
     tip.append("G", style=f"bold {AMBRE}")
     tip.append("  (ouvre Preview.app avec un rendu haute résolution)", style=MUTED)
 
-    # --- Légende lignes ---
+    # --- Légende lignes avec valeurs exactes pour vérif visuelle ---
     legend = Text()
     legend.append(" Lignes : ", style=MUTED)
-    legend.append("entry ", style=OFF_WHITE)
-    legend.append("·  ", style=MUTED)
-    legend.append("TP ", style=SAUGE)
-    legend.append("·  ", style=MUTED)
-    legend.append("SL", style=TERRA)
+    if trade_plan is not None:
+        legend.append(f"entry {trade_plan.entry:.2f}", style=OFF_WHITE)
+        legend.append("   ·   ", style=MUTED)
+        legend.append(f"TP {trade_plan.target:.2f}", style=SAUGE)
+        legend.append("   ·   ", style=MUTED)
+        legend.append(f"SL {trade_plan.stop:.2f}", style=TERRA)
+    else:
+        legend.append("entry ", style=OFF_WHITE)
+        legend.append("·  ", style=MUTED)
+        legend.append("TP ", style=SAUGE)
+        legend.append("·  ", style=MUTED)
+        legend.append("SL", style=TERRA)
 
     return Group(
         _stats_header(bars),
