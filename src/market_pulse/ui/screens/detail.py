@@ -19,16 +19,16 @@ SMOKE_BLUE = (107, 140, 174)
 OFF_WHITE = (232, 230, 227)
 
 
-def _render_candles(opp: Opportunity, width: int = 70, chart_height: int = 14) -> Text:
-    """Custom candlestick chart via Rich Text.
+def _render_candles(opp: Opportunity, width: int = 70, chart_height: int = 17) -> Text:
+    """Area chart (ligne + remplissage) du close, plus lisible que des bougies en terminal.
 
     Largeur par défaut 70 = largeur interne du chart-panel (#chart-panel width:74
-    − border 2 − padding 2). Au-delà, Textual wrappe chaque ligne et double l'affichage.
+    − border 2 − padding 2). Au-delà, Textual wrappe les lignes.
     """
-    bars = opp.recent_bars[-(width - 9):] if opp.recent_bars else []
+    bars = opp.recent_bars[-120:] if opp.recent_bars else []
     return render_candlestick_chart(
         bars=bars, trade_plan=opp.trade_plan,
-        width=width, chart_height=chart_height, volume_height=3,
+        width=width, chart_height=chart_height,
     )
 
 
