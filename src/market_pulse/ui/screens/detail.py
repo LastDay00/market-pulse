@@ -274,9 +274,15 @@ class DetailScreen(Screen):
         name_part = f"  ·  {name}" if name else ""
         direction_fr = "LONG" if o.trade_plan.direction == "long" else "SHORT"
         status = "  ·  ⏳ chargement…" if self._loading else ""
+        if o.blended and o.technical_score is not None and o.fundamental_score is not None:
+            score_part = (f"  ·  SCORE {o.score:.1f} / 100"
+                          f"  (tech {o.technical_score:.0f}"
+                          f"  ·  fonda {o.fundamental_score:.0f})")
+        else:
+            score_part = f"  ·  SCORE {o.score:.1f} / 100"
         return (f"{o.ticker}{name_part}"
                 f"  ·  {direction_fr}"
-                f"  ·  SCORE {o.score:.1f} / 100"
+                f"{score_part}"
                 f"  ·  horizon {o.horizon.upper()}{status}")
 
     def action_load_data(self) -> None:

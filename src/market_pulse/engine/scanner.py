@@ -75,21 +75,80 @@ async def _translate_news_titles(titles: list[str]) -> list[str]:
 class Opportunity:
     ticker: str
     horizon: str
-    score: float
+    score: float                  # Score affiché (technique initial, puis blended après F)
     trade_plan: TradePlan
     signal_details: list[tuple[str, float, dict]]
-    recent_bars: list[Bar]  # 252 derniers jours OHLCV (chart + stats)
-    name: str = ""  # nom court depuis l'univers (ex. "Apple Inc.")
+    recent_bars: list[Bar]
+    name: str = ""
     meta: TickerMeta | None = None
     news: list[NewsItem] = field(default_factory=list)
     fundamentals: Fundamentals | None = None
+    # Scores détaillés, renseignés après enrichment avec fondamentaux
+    technical_score: float | None = None   # Score d'origine (pur technique)
+    fundamental_score: float | None = None # Score fondamental 0-100
+    blended: bool = False                  # True si .score est un mix tech+fonda
+
+
+def _score_low_is_good(v: float | None, good_max: float, bad_min: float) -> float | None:
+    """Ratio où la valeur basse est favorable (ex. PER, dette).
+    100 pts si ≤ good_max, 0 pts si ≥ bad_min, interpolé au milieu.
+    """
+    if v is None:
+        return None
+    if v <= good_max:
+        return 100.0
+    if v >= bad_min:
+        return 0.0
+    return 100.0 - (v - good_max) / (bad_min - good_max) * 100
+
+
+def _score_high_is_good(v: float | None, good_min: float, bad_max: float) -> float | None:
+    """Ratio où la valeur haute est favorable (ex. marges, ROE, croissance)."""
+    if v is None:
+        return None
+    if v >= good_min:
+        return 100.0
+    if v <= bad_max:
+        return 0.0
+    return (v - bad_max) / (good_min - bad_max) * 100
+
+
+def compute_fundamental_score(meta: TickerMeta | None) -> float | None:
+    """Score fondamental 0-100 agrégé à partir des ratios clés.
+    Retourne None si meta absent ou si aucun sous-score calculable.
+    """
+    if meta is None:
+        return None
+    sub_scores = [
+        # Valorisation (bas = bon)
+        _score_low_is_good(meta.trailing_pe, 15, 35),
+        _score_low_is_good(meta.peg_ratio, 1.0, 2.5),
+        _score_low_is_good(meta.debt_to_equity, 100, 300),
+        _score_low_is_good(meta.price_to_book, 2.0, 5.0),
+        # Rentabilité (haut = bon)
+        _score_high_is_good(meta.profit_margin, 0.15, 0.03),
+        _score_high_is_good(meta.return_on_equity, 0.15, 0.05),
+        _score_high_is_good(meta.gross_margin, 0.40, 0.15),
+        _score_high_is_good(meta.operating_margin, 0.20, 0.05),
+        # Croissance (haut = bon)
+        _score_high_is_good(meta.revenue_growth, 0.10, 0.00),
+        _score_high_is_good(meta.earnings_growth, 0.10, 0.00),
+        # Solvabilité (haut = bon)
+        _score_high_is_good(meta.current_ratio, 1.5, 1.0),
+    ]
+    valid = [s for s in sub_scores if s is not None]
+    if not valid:
+        return None
+    return sum(valid) / len(valid)
 
 
 async def enrich_opportunity(opp: Opportunity, provider: Provider) -> None:
-    """Fetch meta + news (traduites) + fundamentals et attache à l'Opportunity.
+    """Fetch meta + news + fundamentals, traduit les news, puis blend le score
+    technique avec un score fondamental (80 % technique + 20 % fondamental).
 
-    Utilisé par le scan (top 20) et par l'UI de détail pour charger à la demande
-    un ticker hors top 20.
+    Pour une direction SHORT, le score fondamental est INVERSÉ : une mauvaise
+    boîte est plus attractive à shorter, donc un fondamental faible augmente
+    la note de short.
     """
     meta, news, fundamentals = await asyncio.gather(
         provider.fetch_meta(opp.ticker),
@@ -106,6 +165,19 @@ async def enrich_opportunity(opp: Opportunity, provider: Provider) -> None:
             for n, t in zip(news, translated_titles)
         ]
     opp.news = news
+
+    # Score fondamental + blend avec le score technique
+    fund_score = compute_fundamental_score(meta)
+    if fund_score is not None:
+        # Inversion pour un short : fundamentaux faibles = bon à shorter
+        effective_fund = fund_score
+        if opp.trade_plan.direction == "short":
+            effective_fund = 100.0 - fund_score
+        if opp.technical_score is None:
+            opp.technical_score = opp.score
+        opp.fundamental_score = fund_score
+        opp.score = 0.8 * opp.technical_score + 0.2 * effective_fund
+        opp.blended = True
 
 
 def _bars_to_df(bars: list[Bar]) -> pd.DataFrame:
