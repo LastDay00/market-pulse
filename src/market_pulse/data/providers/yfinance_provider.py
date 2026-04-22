@@ -1,9 +1,6 @@
 """Provider yfinance avec fetch asynchrone via run_in_executor."""
 import asyncio
-import contextlib
-import io
 import logging
-import os
 from datetime import date, datetime
 
 import yfinance as yf
@@ -13,23 +10,11 @@ from market_pulse.data.providers.base import (
     FinancialLine, Fundamentals, NewsItem, Provider, TickerMeta,
 )
 
-# Silence les "possibly delisted" / HTTP 404 imprimés par yfinance sur stderr/log
+# Silence les loggers yfinance (les messages 'possibly delisted' passent parfois
+# par des prints directs stderr qu'on ne peut pas capturer de façon async-safe —
+# on a nettoyé la liste UCITS ETFs pour que les tickers invalides soient rares)
 logging.getLogger("yfinance").setLevel(logging.CRITICAL)
 logging.getLogger("peewee").setLevel(logging.CRITICAL)
-
-
-@contextlib.contextmanager
-def _silence_stderr():
-    """Redirige stderr vers /dev/null pour la durée du bloc."""
-    devnull = open(os.devnull, "w")
-    old_stderr = os.dup(2)
-    try:
-        os.dup2(devnull.fileno(), 2)
-        yield
-    finally:
-        os.dup2(old_stderr, 2)
-        os.close(old_stderr)
-        devnull.close()
 
 
 class YFinanceProvider(Provider):
@@ -43,17 +28,14 @@ class YFinanceProvider(Provider):
     ) -> list[Bar]:
         async with self._sem:
             loop = asyncio.get_running_loop()
-
-            def _fetch():
-                with _silence_stderr():
-                    return yf.Ticker(ticker).history(
+            try:
+                df = await loop.run_in_executor(
+                    None, lambda: yf.Ticker(ticker).history(
                         start=start.isoformat(),
                         end=end.isoformat(),
                         auto_adjust=False,
                     )
-
-            try:
-                df = await loop.run_in_executor(None, _fetch)
+                )
             except Exception:
                 return []
             if df is None or df.empty:
@@ -75,13 +57,10 @@ class YFinanceProvider(Provider):
     async def fetch_meta(self, ticker: str) -> TickerMeta | None:
         async with self._sem:
             loop = asyncio.get_running_loop()
-
-            def _fetch():
-                with _silence_stderr():
-                    return yf.Ticker(ticker).info
-
             try:
-                info = await loop.run_in_executor(None, _fetch)
+                info = await loop.run_in_executor(
+                    None, lambda: yf.Ticker(ticker).info
+                )
             except Exception:
                 return None
             if not info:
@@ -140,13 +119,12 @@ class YFinanceProvider(Provider):
             loop = asyncio.get_running_loop()
 
             def _fetch():
-                with _silence_stderr():
-                    t = yf.Ticker(ticker)
-                    return (
-                        t.financials,        # income statement annuel
-                        t.balance_sheet,     # bilan annuel
-                        t.cashflow,          # cash flow annuel
-                    )
+                t = yf.Ticker(ticker)
+                return (
+                    t.financials,        # income statement annuel
+                    t.balance_sheet,     # bilan annuel
+                    t.cashflow,          # cash flow annuel
+                )
 
             try:
                 income_df, balance_df, cashflow_df = await loop.run_in_executor(None, _fetch)
@@ -209,13 +187,10 @@ class YFinanceProvider(Provider):
     async def fetch_news(self, ticker: str, max_items: int = 5) -> list[NewsItem]:
         async with self._sem:
             loop = asyncio.get_running_loop()
-
-            def _fetch():
-                with _silence_stderr():
-                    return yf.Ticker(ticker).news
-
             try:
-                raw = await loop.run_in_executor(None, _fetch)
+                raw = await loop.run_in_executor(
+                    None, lambda: yf.Ticker(ticker).news
+                )
             except Exception:
                 return []
             if not raw:
