@@ -26,6 +26,36 @@ HORIZON_SIGNALS_1W = [
 ]
 
 
+async def _translate_news_titles(titles: list[str]) -> list[str]:
+    """Traduit une liste de titres EN → FR via deep_translator.
+
+    Silencieux en cas d'erreur (pas de réseau, rate-limit) : retourne les
+    titres originaux. On fait tout en une seule requête asynchrone via executor.
+    """
+    try:
+        from deep_translator import GoogleTranslator
+    except ImportError:
+        return titles
+
+    loop = asyncio.get_running_loop()
+
+    def _do_translate() -> list[str]:
+        try:
+            translator = GoogleTranslator(source="auto", target="fr")
+            # translate_batch si dispo, sinon boucle
+            try:
+                return translator.translate_batch(titles)
+            except Exception:
+                return [translator.translate(t) or t for t in titles]
+        except Exception:
+            return titles
+
+    try:
+        return await loop.run_in_executor(None, _do_translate)
+    except Exception:
+        return titles
+
+
 @dataclass(frozen=False)
 class Opportunity:
     ticker: str
@@ -118,6 +148,14 @@ async def scan(
             provider.fetch_news(opp.ticker, max_items=5),
         )
         opp.meta = meta
+        # Traduction FR des titres de news (parallèle)
+        if news:
+            translated_titles = await _translate_news_titles([n.title for n in news])
+            news = [
+                NewsItem(title=t, publisher=n.publisher,
+                         published=n.published, link=n.link)
+                for n, t in zip(news, translated_titles)
+            ]
         opp.news = news
 
     await asyncio.gather(*(_enrich(o) for o in top))
