@@ -71,7 +71,7 @@ BRK-B,Berkshire Hathaway
 BRO,Brown & Brown
 BSX,Boston Scientific
 BX,Blackstone Inc.
-BXP,"BXP, Inc."
+BXP,BXP Inc.
 C,Citigroup
 CAG,Conagra Brands
 CAH,Cardinal Health
@@ -188,7 +188,7 @@ FCX,Freeport-McMoRan
 FDS,FactSet
 FDX,FedEx
 FE,FirstEnergy
-FFIV,"F5, Inc."
+FFIV,F5 Inc.
 FICO,Fair Isaac
 FIS,Fidelity National Information Services
 FISV,Fiserv
@@ -325,13 +325,13 @@ MTB,M&T Bank
 MTD,Mettler Toledo
 MU,Micron Technology
 NCLH,Norwegian Cruise Line Holdings
-NDAQ,"Nasdaq, Inc."
+NDAQ,Nasdaq Inc.
 NDSN,Nordson Corporation
 NEE,NextEra Energy
 NEM,Newmont
 NFLX,Netflix
 NI,NiSource
-NKE,"Nike, Inc."
+NKE,Nike Inc.
 NOC,Northrop Grumman
 NOW,ServiceNow
 NRG,NRG Energy
@@ -340,7 +340,7 @@ NTAP,NetApp
 NTRS,Northern Trust
 NUE,Nucor
 NVDA,Nvidia
-NVR,"NVR, Inc."
+NVR,NVR Inc.
 NWS,News Corp (Class B)
 NWSA,News Corp (Class A)
 NXPI,NXP Semiconductors
@@ -393,7 +393,7 @@ RJF,Raymond James Financial
 RL,Ralph Lauren Corporation
 RMD,ResMed
 ROK,Rockwell Automation
-ROL,"Rollins, Inc."
+ROL,Rollins Inc.
 ROP,Roper Technologies
 ROST,Ross Stores
 RSG,Republic Services
@@ -440,13 +440,13 @@ TKO,TKO Group Holdings
 TMO,Thermo Fisher Scientific
 TMUS,T-Mobile US
 TPL,Texas Pacific Land Corporation
-TPR,"Tapestry, Inc."
+TPR,Tapestry Inc.
 TRGP,Targa Resources
 TRMB,Trimble Inc.
 TROW,T. Rowe Price
 TRV,Travelers Companies (The)
 TSCO,Tractor Supply
-TSLA,"Tesla, Inc."
+TSLA,Tesla Inc.
 TSN,Tyson Foods
 TT,Trane Technologies
 TTD,Trade Desk (The)
@@ -456,7 +456,7 @@ TXT,Textron
 TYL,Tyler Technologies
 UAL,United Airlines Holdings
 UBER,Uber
-UDR,"UDR, Inc."
+UDR,UDR Inc.
 UHS,Universal Health Services
 ULTA,Ulta Beauty
 UNH,UnitedHealth Group
@@ -480,7 +480,7 @@ VZ,Verizon
 WAB,Wabtec
 WAT,Waters Corporation
 WBD,Warner Bros. Discovery
-WDAY,"Workday, Inc."
+WDAY,Workday Inc.
 WDC,Western Digital
 WEC,WEC Energy Group
 WELL,Welltower
@@ -489,7 +489,7 @@ WM,Waste Management
 WMB,Williams Companies
 WMT,Walmart
 WRB,W. R. Berkley Corporation
-WSM,"Williams-Sonoma, Inc."
+WSM,Williams-Sonoma Inc.
 WST,West Pharmaceutical Services
 WTW,Willis Towers Watson
 WY,Weyerhaeuser
@@ -497,7 +497,7 @@ WYNN,Wynn Resorts
 XEL,Xcel Energy
 XOM,ExxonMobil
 XYL,Xylem Inc.
-XYZ,"Block, Inc."
+XYZ,Block Inc.
 YUM,Yum! Brands
 ZBH,Zimmer Biomet
 ZBRA,Zebra Technologies

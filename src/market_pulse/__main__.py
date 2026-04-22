@@ -7,19 +7,20 @@ from market_pulse.config import CACHE_DB, ensure_app_dir
 from market_pulse.data.providers.yfinance_provider import YFinanceProvider
 from market_pulse.engine.scanner import scan
 from market_pulse.ui.app import MarketPulseApp
-from market_pulse.universe.loaders import load_sp500, load_sp500_names
+from market_pulse.universe.loaders import load_universe
 
 RESCAN_RETURN_CODE = 42
 
 
 async def _do_scan(force_refresh: bool = False):
     ensure_app_dir()
-    tickers = load_sp500()
-    names = load_sp500_names()
+    # Univers combiné : S&P 500 + Nasdaq 100 + CAC 40 + CAC Next 20 + DAX + FTSE MIB + IBEX 35
+    names = load_universe()
+    tickers = sorted(names.keys())
     provider = YFinanceProvider(max_concurrency=10)
 
     mode = "force refresh (cache bypass)" if force_refresh else "cache-aware"
-    print(f"· scanning {len(tickers)} tickers (horizon 1W, {mode}) ...")
+    print(f"· scanning {len(tickers)} tickers across 7 indices (horizon 1W, {mode}) ...")
     t0 = time.time()
 
     last_print = [0.0]
