@@ -81,6 +81,24 @@ def _fmt_num(v: float) -> str:
     return f"{v:>10.2f}"
 
 
+def _fmt_full_int(v: float | None) -> str:
+    """Formate un montant en entier avec espace comme séparateur de milliers.
+    523000000 -> '523 000 000'. None -> '—'.
+    """
+    if v is None:
+        return "—"
+    return f"{int(round(v)):,}".replace(",", " ")
+
+
+def _fmt_full_or_decimal(v: float | None) -> str:
+    """Si > 1000 : entier avec séparateur. Sinon décimal 2 chiffres."""
+    if v is None:
+        return "—"
+    if abs(v) >= 1000:
+        return _fmt_full_int(v)
+    return f"{v:.2f}"
+
+
 def _format_score_bar(score: float, width: int = 6) -> str:
     blocks = "▏▎▍▌▋▊▉█"
     score = max(0.0, min(100.0, score))
@@ -109,31 +127,30 @@ class DetailScreen(Screen):
         with VerticalScroll(id="detail-scroll"):
             yield Static(self._title_line(), classes="highlight-amber", id="title")
             yield Static(self._subtitle_line(), id="subtitle")
+            # Row 1 : Chart | Signals | Trade Plan | Stats (tout horizontal)
             with Horizontal(id="top-panels"):
                 yield Static(_render_candles(self.opp),
                              id="chart-panel", classes="panel")
                 yield Static(self._signals_text(),
                              id="signals-panel", classes="panel")
-            # Trade plan en premier sous le chart
-            yield Static(self._trade_plan_text(),
-                         id="plan-panel", classes="panel")
-            # News juste après le plan (avant les stats selon demande user)
+                yield Static(self._trade_plan_text(),
+                             id="plan-panel", classes="panel")
+                yield Static(self._stats_text(),
+                             id="stats-panel", classes="panel")
+            # Row 2 : News full width
             yield Static(self._news_text(),
                          id="news-panel", classes="panel")
-            # Stats prix/volume/range
-            yield Static(self._stats_text(),
-                         id="stats-panel", classes="panel")
             # Fondamentaux : valorisation, rentabilité, croissance, santé bilan
             yield Static(self._valuation_text(),
                          id="valuation-panel", classes="panel")
-            # États financiers
-            with Horizontal(id="financials-row"):
-                yield Static(self._income_text(),
-                             id="income-panel", classes="panel")
-                yield Static(self._balance_text(),
-                             id="balance-panel", classes="panel")
-                yield Static(self._cashflow_text(),
-                             id="cashflow-panel", classes="panel")
+            # États financiers : stack vertical pour avoir la largeur complète
+            # et afficher les chiffres sans abréviation (ex. "523 000 000 000")
+            yield Static(self._income_text(),
+                         id="income-panel", classes="panel")
+            yield Static(self._balance_text(),
+                         id="balance-panel", classes="panel")
+            yield Static(self._cashflow_text(),
+                         id="cashflow-panel", classes="panel")
         yield Footer()
 
     def _title_line(self) -> str:
@@ -237,18 +254,21 @@ class DetailScreen(Screen):
     def _valuation_text(self) -> str:
         m = self.opp.meta
         if not m:
-            return "VALORISATION & RATIOS\n (métadonnées non chargées — ticker hors top 20)"
+            return ("VALORISATION & RATIOS\n"
+                    " (métadonnées non chargées — appuie sur F pour forcer le chargement)")
 
-        def fn(v: float | None, pct: bool = False, unit: str = "") -> str:
+        def val(v: float | None, unit: str = "") -> str:
+            """Montant complet avec espace séparateur de milliers."""
             if v is None:
-                return "     —"
-            if pct:
-                return f"{v * 100:>6.2f}%"
-            if abs(v) >= 1e9:
-                return f"{v/1e9:>6.2f}Md{unit}"
-            if abs(v) >= 1e6:
-                return f"{v/1e6:>6.2f}M{unit}"
-            return f"{v:>6.2f}{unit}"
+                return "—"
+            return f"{_fmt_full_int(v)}{unit}"
+
+        def ratio(v: float | None) -> str:
+            """Ratio numérique 2 décimales."""
+            return f"{v:.2f}" if v is not None else "—"
+
+        def pct(v: float | None) -> str:
+            return f"{v * 100:.2f}%" if v is not None else "—"
 
         reco_fr = {
             "strong_buy": "achat fort", "buy": "achat",
@@ -258,36 +278,71 @@ class DetailScreen(Screen):
 
         lines = [
             "VALORISATION & RATIOS",
-            " VALORISATION                                RENTABILITÉ",
-            f"  · Capitalisation         {fn(m.market_cap, unit=f' {m.currency}')}    · Marge brute          {fn(m.gross_margin, pct=True)}",
-            f"  · Valeur d'entreprise    {fn(m.enterprise_value, unit=f' {m.currency}')}    · Marge opérationnelle {fn(m.operating_margin, pct=True)}",
-            f"  · PER historique         {fn(m.trailing_pe)}       · Marge nette          {fn(m.profit_margin, pct=True)}",
-            f"  · PER prévisionnel       {fn(m.forward_pe)}       · ROE (rentab. CP)     {fn(m.return_on_equity, pct=True)}",
-            f"  · Ratio PEG              {fn(m.peg_ratio)}       · ROA (rentab. actifs) {fn(m.return_on_assets, pct=True)}",
-            f"  · Cours / Valeur compt.  {fn(m.price_to_book)}",
-            f"  · Cours / CA             {fn(m.price_to_sales)}     CROISSANCE (an. glissant)",
-            f"  · VE / EBITDA            {fn(m.ev_to_ebitda)}       · Croissance CA        {fn(m.revenue_growth, pct=True)}",
-            f"                                          · Croissance résultat  {fn(m.earnings_growth, pct=True)}",
+            "",
+            " VALORISATION",
+            f"  · Capitalisation           {val(m.market_cap, f' {m.currency}')}",
+            f"  · Valeur d'entreprise      {val(m.enterprise_value, f' {m.currency}')}",
+            f"  · PER historique           {ratio(m.trailing_pe)}",
+            f"  · PER prévisionnel         {ratio(m.forward_pe)}",
+            f"  · Ratio PEG                {ratio(m.peg_ratio)}",
+            f"  · Cours / Valeur comptable {ratio(m.price_to_book)}",
+            f"  · Cours / Chiffre d'aff.   {ratio(m.price_to_sales)}",
+            f"  · VE / EBITDA              {ratio(m.ev_to_ebitda)}",
+            "",
+            " RENTABILITÉ                                 CROISSANCE (sur un an glissant)",
+            f"  · Marge brute              {pct(m.gross_margin):<10}       · Croissance CA        {pct(m.revenue_growth)}",
+            f"  · Marge opérationnelle     {pct(m.operating_margin):<10}       · Croissance résultat  {pct(m.earnings_growth)}",
+            f"  · Marge nette              {pct(m.profit_margin)}",
+            f"  · ROE (rentab. capitaux)   {pct(m.return_on_equity)}",
+            f"  · ROA (rentab. actifs)     {pct(m.return_on_assets)}",
             "",
             " SOLIDITÉ BILAN                              DIVIDENDE & ANALYSTES",
-            f"  · Dette / Fonds propres  {fn(m.debt_to_equity)}       · Rendement dividende  {fn(m.dividend_yield, pct=True)}",
-            f"  · Liquidité générale     {fn(m.current_ratio)}       · Taux de distribution {fn(m.payout_ratio, pct=True)}",
-            f"  · Liquidité immédiate    {fn(m.quick_ratio)}       · Recommandation       {reco_fr:>10}",
-            f"  · Trésorerie totale      {fn(m.total_cash, unit=f' {m.currency}')}    · Objectif analystes   {fn(m.target_mean_price)} ({m.number_analysts or '—'} an.)",
-            f"  · Dette totale           {fn(m.total_debt, unit=f' {m.currency}')}",
+            f"  · Trésorerie totale        {val(m.total_cash, f' {m.currency}'):<30}  · Rendement dividende  {pct(m.dividend_yield)}",
+            f"  · Dette totale             {val(m.total_debt, f' {m.currency}'):<30}  · Taux de distribution {pct(m.payout_ratio)}",
+            f"  · Dette / Fonds propres    {ratio(m.debt_to_equity):<30}  · Recommandation       {reco_fr}",
+            f"  · Liquidité générale       {ratio(m.current_ratio):<30}  · Objectif analystes   {_fmt_full_or_decimal(m.target_mean_price)} ({m.number_analysts or '—'} analystes)",
+            f"  · Liquidité immédiate      {ratio(m.quick_ratio)}",
         ]
         return "\n".join(lines)
 
-    def _fmt_financial_value(self, v: float | None) -> str:
-        if v is None:
-            return "     —"
-        if abs(v) >= 1e9:
-            return f"{v/1e9:>8.2f}B"
-        if abs(v) >= 1e6:
-            return f"{v/1e6:>8.2f}M"
-        if abs(v) >= 1e3:
-            return f"{v/1e3:>8.2f}K"
-        return f"{v:>9.2f}"
+# Direction préférentielle par ligne d'état financier :
+    #   "up_good"   : hausse = bonne nouvelle (CA, marge, résultat net, FCF…)
+    #   "down_good" : baisse = bonne nouvelle (dette, coût des ventes…)
+    #   "neutral"   : ni bon ni mauvais en soi (flux d'investissement, capex…)
+    DIRECTION_PREFERENCE = {
+        # Compte de résultat
+        "Total Revenue":                    "up_good",
+        "Cost Of Revenue":                  "down_good",
+        "Gross Profit":                     "up_good",
+        "Operating Income":                 "up_good",
+        "EBIT":                             "up_good",
+        "EBITDA":                           "up_good",
+        "Net Income":                       "up_good",
+        "Net Income Common Stockholders":   "up_good",
+        "Diluted EPS":                      "up_good",
+        "Basic EPS":                        "up_good",
+        # Bilan — actifs
+        "Total Assets":                     "up_good",
+        "Total Equity Gross Minority Interest": "up_good",
+        "Stockholders Equity":              "up_good",
+        "Cash And Cash Equivalents":        "up_good",
+        "Cash Cash Equivalents And Short Term Investments": "up_good",
+        "Working Capital":                  "up_good",
+        # Bilan — passifs / dette (baisse = sain)
+        "Total Liabilities Net Minority Interest": "down_good",
+        "Total Debt":                       "down_good",
+        "Long Term Debt":                   "down_good",
+        "Current Debt":                     "down_good",
+        # Cash flow — positif = bon
+        "Operating Cash Flow":              "up_good",
+        "Free Cash Flow":                   "up_good",
+        # Cash flow — contextuel
+        "Investing Cash Flow":              "neutral",
+        "Financing Cash Flow":              "neutral",
+        "Capital Expenditure":              "neutral",
+        "Cash Dividends Paid":              "neutral",
+        "Repurchase Of Capital Stock":      "neutral",
+    }
 
     # Libellés yfinance (anglais) → français, pour affichage uniquement
     FR_LABELS = {
@@ -326,19 +381,58 @@ class DetailScreen(Screen):
     def _translate_label(self, label: str) -> str:
         return self.FR_LABELS.get(label, label)
 
-    def _render_financial_block(self, title: str, lines) -> str:
+    def _arrow_for_direction(
+        self, current: float | None, previous: float | None, preference: str
+    ) -> tuple[str, str]:
+        """Retourne (char_fleche, style_Rich) selon évolution current vs previous
+        et la préférence 'up_good' / 'down_good' / 'neutral'.
+        """
+        if current is None or previous is None or preference == "neutral":
+            return "─", "#8A8680"  # gris neutre
+        if abs(current - previous) < 1e-6:
+            return "─", "#8A8680"
+        going_up = current > previous
+        if preference == "up_good":
+            return ("▲", "#7FB069") if going_up else ("▼", "#C97064")
+        if preference == "down_good":
+            return ("▼", "#7FB069") if not going_up else ("▲", "#C97064")
+        return "─", "#8A8680"
+
+    def _render_financial_block(self, title: str, lines) -> Text:
+        """Rend un bloc financier en Rich Text avec flèches colorées."""
         f = self.opp.fundamentals
+        text = Text()
         if not f or not lines:
-            return f"{title}\n (aucune donnée — ticker hors top 20 ou données indisponibles)"
+            text.append(f"{title}\n", style="bold")
+            text.append(" (aucune donnée — appuie sur F pour forcer le chargement)",
+                        style="#8A8680")
+            return text
+
         periods = f.periods[:3] if f.periods else []
-        header = f"{title}\n  " + " " * 30 + "  ".join(f"{p:>9}" for p in periods)
-        out = [header]
+        currency = self.opp.meta.currency if self.opp.meta else ""
+        title_full = f"{title}" + (f" · en {currency}" if currency else "")
+
+        text.append(f"{title_full}\n", style="bold #E8B45D")
+        # Header : label vide 34 chars + 3 colonnes périodes (arrow 3 + num 15 = 18 chars)
+        text.append("  " + " " * 34
+                    + "  ".join(f"{p:>18}" for p in periods) + "\n",
+                    style="#8A8680")
+
         for line in lines:
             vals = line.values[:3]
-            val_str = "  ".join(self._fmt_financial_value(v) for v in vals)
             label_fr = self._translate_label(line.label)
-            out.append(f"  · {label_fr:<30} {val_str}")
-        return "\n".join(out)
+            preference = self.DIRECTION_PREFERENCE.get(line.label, "neutral")
+
+            text.append(f"  · {label_fr:<32}")
+            for i, v in enumerate(vals):
+                prev = vals[i + 1] if i + 1 < len(vals) else None
+                arrow, arrow_style = self._arrow_for_direction(v, prev, preference)
+                num = "—" if v is None else _fmt_full_int(v)
+                text.append("  ")
+                text.append(f" {arrow} ", style=arrow_style)
+                text.append(f"{num:>15}")
+            text.append("\n")
+        return text
 
     def _income_text(self) -> str:
         f = self.opp.fundamentals

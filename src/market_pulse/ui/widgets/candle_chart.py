@@ -48,10 +48,11 @@ def render_candlestick_chart(
     trend_up = closes[-1] >= closes[0]
     line_color = SAUGE_RGB if trend_up else TERRA_RGB
 
-    # Ligne de prix avec remplissage sous la courbe (area chart)
-    plt.plot(dates, closes, color=line_color, fillx=True, marker="braille")
+    # Ligne de prix D'ABORD, sans remplissage (le fill masquait les hlines)
+    plt.plot(dates, closes, color=line_color, marker="braille")
 
-    # Lignes de référence du trade plan
+    # Lignes de référence PAR-DESSUS : les appels plus tardifs passent devant
+    # dans l'ordre de rendu plotext
     if trade_plan is not None:
         plt.hline(trade_plan.entry, color=OFF_WHITE_RGB)
         plt.hline(trade_plan.target, color=SAUGE_RGB)
