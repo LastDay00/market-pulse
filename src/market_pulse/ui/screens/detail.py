@@ -125,6 +125,7 @@ class DetailScreen(Screen):
     BINDINGS = [
         Binding("escape", "app.pop_screen", "Retour", show=True),
         Binding("f", "load_data", "Charger/Rafraîchir données", show=True),
+        Binding("g", "open_chart_external", "Chart en plein écran", show=True),
         Binding("q", "app.quit", "Quitter", show=True),
     ]
 
@@ -234,6 +235,40 @@ class DetailScreen(Screen):
                 self._chart_png_path.unlink()
             except Exception:
                 pass
+
+    def action_open_chart_external(self) -> None:
+        """Ouvre le chart PNG dans le viewer système (Preview.app sur macOS,
+        xdg-open sur Linux). Permet d'avoir un vrai chart pixel-perfect
+        même depuis Terminal.app qui ne supporte pas les protocoles inline.
+        """
+        import subprocess
+        import sys
+
+        # Régénère un chart haute résolution pour un affichage externe propre
+        try:
+            hi_res = save_chart_to_temp(
+                self.opp.recent_bars[-120:] if self.opp.recent_bars else [],
+                self.opp.trade_plan,
+                width_px=2400, height_px=1000,
+            )
+        except Exception as e:
+            self.notify(f"Erreur génération chart : {e}", severity="error")
+            return
+
+        try:
+            if sys.platform == "darwin":
+                subprocess.Popen(["open", str(hi_res)])
+            elif sys.platform.startswith("linux"):
+                subprocess.Popen(["xdg-open", str(hi_res)])
+            elif sys.platform == "win32":
+                os.startfile(str(hi_res))  # type: ignore
+            else:
+                self.notify("OS non supporté pour l'ouverture externe",
+                            severity="warning")
+                return
+            self.notify(f"Chart ouvert dans le viewer système ({hi_res.name})")
+        except Exception as e:
+            self.notify(f"Erreur ouverture : {e}", severity="error")
 
     def _title_line(self) -> str:
         o = self.opp
