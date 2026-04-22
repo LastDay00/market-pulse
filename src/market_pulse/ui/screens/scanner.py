@@ -30,10 +30,12 @@ class ScannerScreen(Screen):
             classes="highlight-amber",
         )
         table = DataTable(cursor_type="row", zebra_stripes=False, id="opps-table")
-        table.add_columns("#", "TICKER", "DIR", "SCORE", "ENTRY", "TP", "SL", "R/R", "▲%")
+        table.add_columns(
+            "#", "TICKER", "NAME", "DIR", "SCORE",
+            "ENTRY", "TP", "SL", "R/R", "▲%"
+        )
         for i, opp in enumerate(self.opportunities, start=1):
             tp = opp.trade_plan
-            # uplift = potentiel gain en % dans la direction du trade
             if tp.direction == "long":
                 uplift = (tp.target - tp.entry) / tp.entry * 100 if tp.entry else 0
                 dir_text = Text("LONG ", style="#7FB069 bold")
@@ -41,9 +43,11 @@ class ScannerScreen(Screen):
                 uplift = (tp.entry - tp.target) / tp.entry * 100 if tp.entry else 0
                 dir_text = Text("SHORT", style="#C97064 bold")
             score_str = f"{render_score_bar(opp.score)} {opp.score:5.1f}"
+            name_short = (opp.name[:26] + "…") if len(opp.name) > 27 else opp.name
             table.add_row(
                 f"{i:02d}",
                 opp.ticker,
+                name_short,
                 dir_text,
                 score_str,
                 f"{tp.entry:>8.2f}",

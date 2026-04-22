@@ -77,6 +77,7 @@ class Opportunity:
     trade_plan: TradePlan
     signal_details: list[tuple[str, float, dict]]
     recent_bars: list[Bar]  # 252 derniers jours OHLCV (chart + stats)
+    name: str = ""  # nom court depuis l'univers (ex. "Apple Inc.")
     meta: TickerMeta | None = None
     news: list[NewsItem] = field(default_factory=list)
 
@@ -125,6 +126,7 @@ async def scan(
     min_rr: float = 2.0,
     lookback_days: int = 365,
     enrich_top_n: int = 20,
+    names: dict[str, str] | None = None,
 ) -> list[Opportunity]:
     if horizon != "1w":
         raise NotImplementedError("Phase 1 supports only horizon='1w'")
@@ -154,6 +156,7 @@ async def scan(
             ticker=ticker, horizon=horizon, score=score,
             trade_plan=plan, signal_details=details,
             recent_bars=recent_bars,
+            name=(names or {}).get(ticker, ""),
         )
 
     results = await asyncio.gather(*(_process(t) for t in tickers))

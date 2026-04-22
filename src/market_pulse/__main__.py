@@ -6,7 +6,7 @@ from market_pulse.config import CACHE_DB, ensure_app_dir
 from market_pulse.data.providers.yfinance_provider import YFinanceProvider
 from market_pulse.engine.scanner import scan
 from market_pulse.ui.app import MarketPulseApp
-from market_pulse.universe.loaders import load_sp500
+from market_pulse.universe.loaders import load_sp500, load_sp500_names
 
 RESCAN_RETURN_CODE = 42
 
@@ -14,6 +14,7 @@ RESCAN_RETURN_CODE = 42
 async def _do_scan():
     ensure_app_dir()
     tickers = load_sp500()
+    names = load_sp500_names()
     provider = YFinanceProvider(max_concurrency=10)
     print(f"· scanning {len(tickers)} tickers (horizon 1W) ...")
     opps = await scan(
@@ -22,6 +23,7 @@ async def _do_scan():
         provider=provider,
         cache_path=CACHE_DB,
         min_rr=2.0,
+        names=names,
     )
     print(f"· found {len(opps)} opportunities")
     return opps
