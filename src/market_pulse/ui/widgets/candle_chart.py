@@ -58,8 +58,10 @@ def render_candlestick_chart(
     if not bars:
         return Group(Text("no data", style=MUTED))
 
-    # On limite à 40 bougies pour qu'elles aient de l'espace
-    visible = bars[-40:]
+    # Nombre de bougies en fonction de la largeur : ~3 chars par bougie pour que
+    # les bodies aient de la place (comme dans l'article plotext)
+    target_candles = max(30, min(120, width // 3))
+    visible = bars[-target_candles:]
 
     # ---- Chart candlestick ----
     plt.clf()

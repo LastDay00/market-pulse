@@ -20,12 +20,19 @@ SMOKE_BLUE = (107, 140, 174)
 OFF_WHITE = (232, 230, 227)
 
 
-def _render_candles(opp: Opportunity, width: int = 70, chart_height: int = 17) -> Text:
-    """Area chart (ligne + remplissage) du close, plus lisible que des bougies en terminal.
+def _render_candles(opp: Opportunity, width: int | None = None,
+                     chart_height: int = 28) -> Text:
+    """Chart pleine largeur du terminal, grand comme TradingView.
 
-    Largeur par défaut 70 = largeur interne du chart-panel (#chart-panel width:74
-    − border 2 − padding 2). Au-delà, Textual wrappe les lignes.
+    Si width n'est pas fourni, on lit la largeur du terminal dynamiquement
+    (moins bordures + padding du panel) pour que le chart prenne 100% de
+    la largeur disponible sans wrapping.
     """
+    if width is None:
+        import shutil
+        term_w = shutil.get_terminal_size((180, 50)).columns
+        # Marges : 4 chars (bordure scanner panel) + 4 (chart panel border + padding)
+        width = max(80, term_w - 8)
     bars = opp.recent_bars[-120:] if opp.recent_bars else []
     return render_candlestick_chart(
         bars=bars, trade_plan=opp.trade_plan,
@@ -127,17 +134,18 @@ class DetailScreen(Screen):
         with VerticalScroll(id="detail-scroll"):
             yield Static(self._title_line(), classes="highlight-amber", id="title")
             yield Static(self._subtitle_line(), id="subtitle")
-            # Row 1 : Chart | Signals | Trade Plan | Stats (tout horizontal)
-            with Horizontal(id="top-panels"):
-                yield Static(_render_candles(self.opp),
-                             id="chart-panel", classes="panel")
+            # Row 1 : Chart PLEINE LARGEUR (grand comme TradingView)
+            yield Static(_render_candles(self.opp),
+                         id="chart-panel", classes="panel")
+            # Row 2 : Signaux | Plan de trade | Stats (3 colonnes équilibrées)
+            with Horizontal(id="info-row"):
                 yield Static(self._signals_text(),
                              id="signals-panel", classes="panel")
                 yield Static(self._trade_plan_text(),
                              id="plan-panel", classes="panel")
                 yield Static(self._stats_text(),
                              id="stats-panel", classes="panel")
-            # Row 2 : News full width
+            # Row 3 : News full width
             yield Static(self._news_text(),
                          id="news-panel", classes="panel")
             # Fondamentaux : valorisation, rentabilité, croissance, santé bilan
