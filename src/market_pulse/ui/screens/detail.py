@@ -1,4 +1,6 @@
-"""Écran détail : graphe + signaux + trade plan d'un ticker."""
+"""Écran détail : chart candlestick + signaux + trade plan + stats."""
+import math
+
 import plotext as plt
 from rich.text import Text
 from textual.app import ComposeResult
@@ -7,20 +9,18 @@ from textual.containers import Horizontal, VerticalScroll
 from textual.screen import Screen
 from textual.widgets import Footer, Header, Static
 
+from market_pulse.data.models import Bar
 from market_pulse.engine.scanner import Opportunity
 
-
-SAUGE = (127, 176, 105)     # Nothing vert sauge
-TERRA = (201, 112, 100)     # Nothing terre cuite
-AMBRE = (232, 180, 93)      # Nothing ambre
+SAUGE = (127, 176, 105)       # Nothing vert sauge
+TERRA = (201, 112, 100)       # Nothing terre cuite
+AMBRE = (232, 180, 93)        # Nothing ambre
 SMOKE_BLUE = (107, 140, 174)  # Nothing bleu fumée
 OFF_WHITE = (232, 230, 227)
 
 
-def _render_price_chart(opp: Opportunity, width: int = 70, height: int = 16) -> Text:
-    """Candlestick chart sur les bars récentes, avec couleurs Nothing douces.
-    Retourne un rich.Text (ANSI→Rich markup) pour rendu Textual propre.
-    """
+def _render_candles(opp: Opportunity, width: int = 70, height: int = 18) -> Text:
+    """Candlestick des 60 derniers jours avec couleurs Nothing douces."""
     plt.clf()
     plt.theme("pro")
     plt.plotsize(width, height)
@@ -28,7 +28,7 @@ def _render_price_chart(opp: Opportunity, width: int = 70, height: int = 16) -> 
     if not opp.recent_bars:
         return Text("no price history")
 
-    bars = opp.recent_bars
+    bars = opp.recent_bars[-60:]  # 60 dernières bougies pour que chacune ait de l'espace
     dates = [b.date.strftime("%Y-%m-%d") for b in bars]
     data = {
         "Open":  [b.open for b in bars],
@@ -36,10 +36,8 @@ def _render_price_chart(opp: Opportunity, width: int = 70, height: int = 16) -> 
         "Low":   [b.low for b in bars],
         "Close": [b.close for b in bars],
     }
-    # plotext.candlestick : colors = [up_color, down_color]
     plt.candlestick(dates, data, colors=[SAUGE, TERRA])
 
-    # Lignes horizontales du trade plan, en tons doux
     plt.hline(opp.trade_plan.entry, color=OFF_WHITE)
     plt.hline(opp.trade_plan.target, color=SAUGE)
     plt.hline(opp.trade_plan.stop, color=TERRA)
@@ -47,7 +45,55 @@ def _render_price_chart(opp: Opportunity, width: int = 70, height: int = 16) -> 
     return Text.from_ansi(plt.build())
 
 
-def _format_score_bar(score: float, width: int = 8) -> str:
+def _pct_change(bars: list[Bar], back_days: int) -> float | None:
+    if len(bars) <= back_days:
+        return None
+    last = bars[-1].close
+    past = bars[-(back_days + 1)].close
+    if past == 0:
+        return None
+    return (last - past) / past * 100
+
+
+def _annualized_vol(bars: list[Bar], window: int = 20) -> float | None:
+    if len(bars) <= window:
+        return None
+    closes = [b.close for b in bars[-(window + 1):]]
+    rets = [math.log(closes[i] / closes[i - 1]) for i in range(1, len(closes))]
+    mean = sum(rets) / len(rets)
+    var = sum((r - mean) ** 2 for r in rets) / max(1, len(rets) - 1)
+    return math.sqrt(var) * math.sqrt(252) * 100
+
+
+def _range_position(bars: list[Bar], window: int = 252) -> tuple[float, float, float]:
+    """Retourne (low_52w, high_52w, position%) où position = (last-low)/(high-low)."""
+    tail = bars[-window:] if len(bars) >= window else bars
+    highs = [b.high for b in tail]
+    lows = [b.low for b in tail]
+    last = bars[-1].close
+    hi = max(highs)
+    lo = min(lows)
+    rng = hi - lo
+    pos = (last - lo) / rng * 100 if rng > 0 else 50.0
+    return lo, hi, pos
+
+
+def _pos_bar(pos: float, width: int = 12) -> str:
+    """░░░░█░░░░░ : marqueur à la position (0-100)."""
+    pos = max(0.0, min(100.0, pos))
+    idx = int(pos / 100 * (width - 1))
+    return "".join("█" if i == idx else "░" for i in range(width))
+
+
+def _fmt_pct(v: float | None) -> str:
+    return f"{v:+6.2f}%" if v is not None else "   n/a"
+
+
+def _fmt_num(v: float) -> str:
+    return f"{v:>10.2f}"
+
+
+def _format_score_bar(score: float, width: int = 6) -> str:
     blocks = "▏▎▍▌▋▊▉█"
     score = max(0.0, min(100.0, score))
     full = int(score / 100 * width)
@@ -73,12 +119,15 @@ class DetailScreen(Screen):
         with VerticalScroll(id="detail-scroll"):
             yield Static(self._title_line(), classes="highlight-amber", id="title")
             with Horizontal(id="top-panels"):
-                yield Static(_render_price_chart(self.opp),
+                yield Static(_render_candles(self.opp),
                              id="chart-panel", classes="panel")
                 yield Static(self._signals_text(),
                              id="signals-panel", classes="panel")
-            yield Static(self._trade_plan_text(),
-                         id="plan-panel", classes="panel")
+            with Horizontal(id="bottom-panels"):
+                yield Static(self._stats_text(),
+                             id="stats-panel", classes="panel")
+                yield Static(self._trade_plan_text(),
+                             id="plan-panel", classes="panel")
         yield Footer()
 
     def _title_line(self) -> str:
@@ -88,8 +137,6 @@ class DetailScreen(Screen):
                 f"  ·  {len(o.recent_bars)}d history")
 
     def _signals_text(self) -> str:
-        """Une ligne par signal : `NAME ........... SCORE bar`.
-        Volontairement compact pour tenir dans le panneau de droite."""
         lines = ["SIGNALS"]
         for name, score, metadata in self.opp.signal_details:
             bar = _format_score_bar(score, width=6)
@@ -99,22 +146,58 @@ class DetailScreen(Screen):
                 lines.append(f"     {meta_str}")
         return "\n".join(lines)
 
+    def _stats_text(self) -> str:
+        bars = self.opp.recent_bars
+        if not bars:
+            return "STATS\n no data"
+        last = bars[-1]
+        d1 = _pct_change(bars, 1)
+        d5 = _pct_change(bars, 5)
+        d20 = _pct_change(bars, 20)
+        d60 = _pct_change(bars, 60)
+        d252 = _pct_change(bars, 252)
+        hv20 = _annualized_vol(bars, window=20)
+        lo52, hi52, pos52 = _range_position(bars, window=252)
+        # Volume stats
+        vols = [b.volume for b in bars[-20:]]
+        avg_vol = sum(vols) / len(vols) if vols else 0
+
+        lines = [
+            "STATS",
+            f" · Last close     {_fmt_num(last.close)}   {last.date.isoformat()}",
+            f" · Day            {_fmt_pct(d1)}",
+            f" · Week (5d)      {_fmt_pct(d5)}",
+            f" · Month (20d)    {_fmt_pct(d20)}",
+            f" · Quarter (60d)  {_fmt_pct(d60)}",
+            f" · Year (252d)    {_fmt_pct(d252)}",
+            "",
+            f" · HV 20d         {hv20:>9.1f}%" if hv20 is not None else " · HV 20d            n/a",
+            f" · Avg vol 20d    {avg_vol/1e6:>8.2f}M",
+            "",
+            f" · 52w range      {_fmt_num(lo52)} → {_fmt_num(hi52)}",
+            f"   {_pos_bar(pos52)}  pos {pos52:.0f}%",
+        ]
+        return "\n".join(lines)
+
     def _trade_plan_text(self) -> str:
         tp = self.opp.trade_plan
         uplift = (tp.target - tp.entry) / tp.entry * 100 if tp.entry else 0
         downside = (tp.stop - tp.entry) / tp.entry * 100 if tp.entry else 0
+        horizon_desc = {
+            "1d": "1 day", "1w": "5-10 trading days",
+            "1m": "3-6 weeks", "1y": "6-18 months",
+        }.get(tp.horizon, "—")
         return (
             f"TRADE PLAN · {tp.horizon.upper()}\n"
             f" · Entry         {tp.entry:>10.2f}\n"
             f" · Target (TP)   {tp.target:>10.2f}   {uplift:+6.2f}%\n"
             f" · Stop (SL)     {tp.stop:>10.2f}   {downside:+6.2f}%\n"
             f" · Risk/Reward   {tp.risk_reward:>10.2f}\n"
-            f" · Horizon       5-10 trading days"
+            f" · Horizon       {horizon_desc}"
         )
 
 
 def _format_metadata(metadata: dict) -> str:
-    """Extrait la valeur la plus parlante du metadata pour une ligne d'explication."""
     if metadata.get("skipped"):
         return "(no data)"
     if "rsi" in metadata:

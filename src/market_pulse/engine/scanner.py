@@ -95,8 +95,8 @@ async def scan(
         plan = compute_trade_plan(df, horizon=horizon)
         if plan.risk_reward < min_rr:
             return None
-        # Bars récentes pour chart candlestick (90 derniers jours max)
-        recent_bars = bars[-90:]
+        # Bars récentes pour chart candlestick + stats (1 an max)
+        recent_bars = bars[-252:]
         return Opportunity(
             ticker=ticker, horizon=horizon, score=score,
             trade_plan=plan, signal_details=details,

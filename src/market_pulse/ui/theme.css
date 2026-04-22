@@ -56,7 +56,12 @@ DataTable > .datatable--cursor {
 }
 
 #top-panels {
-    height: 20;
+    height: 22;
+    margin-bottom: 1;
+}
+
+#bottom-panels {
+    height: 16;
     margin-bottom: 1;
 }
 
@@ -77,8 +82,13 @@ DataTable > .datatable--cursor {
     min-width: 48;
 }
 
+#stats-panel {
+    width: 1fr;
+    margin-right: 1;
+}
+
 #plan-panel {
-    height: auto;
+    width: 48;
 }
 
 .score-high {
