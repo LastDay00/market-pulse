@@ -92,10 +92,10 @@ DataTable > .datatable--cursor {
     background: #0A0A0B;
 }
 
-/* Fallback si matplotlib/textual-image échoue */
+/* Chart inline demi-largeur (proportions conservées) */
 #chart-panel {
-    width: 100%;
-    height: 36;
+    width: 50%;
+    height: auto;
     margin-bottom: 1;
 }
 
