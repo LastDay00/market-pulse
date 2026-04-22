@@ -140,13 +140,10 @@ class DetailScreen(Screen):
         with VerticalScroll(id="detail-scroll"):
             yield Static(self._title_line(), classes="highlight-amber", id="title")
             yield Static(self._subtitle_line(), id="subtitle")
-            # Chart inline : line chart braille (le plus smooth possible en
-            # cell-based). Pour un vrai rendu pixel-perfect, la touche G
-            # ouvre le PNG matplotlib dans Preview.app.
-            yield Static(_render_candles(self.opp),
-                         id="chart-panel", classes="panel")
-            # Row 2 : Signaux | Plan de trade | Stats (3 colonnes équilibrées)
-            with Horizontal(id="info-row"):
+            # Row 1 : Chart + Signaux + Plan de trade + Stats (4 colonnes)
+            with Horizontal(id="top-row"):
+                yield Static(_render_candles(self.opp),
+                             id="chart-panel", classes="panel")
                 yield Static(self._signals_text(),
                              id="signals-panel", classes="panel")
                 yield Static(self._trade_plan_text(),

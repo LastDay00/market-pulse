@@ -26,6 +26,7 @@ MUTED = "#8A8680"
 
 
 def _stats_header(bars: list[Bar]) -> Text:
+    """Header compact 2-lignes pour éviter le wrap dans un panneau étroit."""
     closes = [b.close for b in bars]
     highs = [b.high for b in bars]
     lows = [b.low for b in bars]
@@ -37,16 +38,19 @@ def _stats_header(bars: list[Bar]) -> Text:
     avg_val = mean(closes)
 
     text = Text()
+    # Ligne 1 : Dernier et Moyenne
     text.append(" Dernier ", style=MUTED)
-    text.append(f"{last:>8.2f}", style=OFF_WHITE)
-    text.append("     ▲ Haut ", style=MUTED)
-    text.append(f"{hi_val:>8.2f}", style=SAUGE)
+    text.append(f"{last:.2f}", style=OFF_WHITE)
+    text.append("   ·   Moyenne ", style=MUTED)
+    text.append(f"{avg_val:.2f}", style=AMBRE)
+    text.append("\n")
+    # Ligne 2 : Haut / Bas
+    text.append(" ▲ Haut ", style=MUTED)
+    text.append(f"{hi_val:.2f}", style=SAUGE)
     text.append(f" ({hi_date})", style=MUTED)
-    text.append("     ▼ Bas ", style=MUTED)
-    text.append(f"{lo_val:>8.2f}", style=TERRA)
+    text.append("   ·   ▼ Bas ", style=MUTED)
+    text.append(f"{lo_val:.2f}", style=TERRA)
     text.append(f" ({lo_date})", style=MUTED)
-    text.append("     Moyenne ", style=MUTED)
-    text.append(f"{avg_val:>8.2f}", style=AMBRE)
     return text
 
 
