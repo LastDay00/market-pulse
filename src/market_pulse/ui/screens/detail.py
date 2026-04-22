@@ -10,24 +10,40 @@ from textual.widgets import Footer, Header, Static
 from market_pulse.engine.scanner import Opportunity
 
 
+SAUGE = (127, 176, 105)     # Nothing vert sauge
+TERRA = (201, 112, 100)     # Nothing terre cuite
+AMBRE = (232, 180, 93)      # Nothing ambre
+SMOKE_BLUE = (107, 140, 174)  # Nothing bleu fumée
+OFF_WHITE = (232, 230, 227)
+
+
 def _render_price_chart(opp: Opportunity, width: int = 70, height: int = 16) -> Text:
-    """Trace le prix de clôture sur l'historique disponible.
-    Retourne un rich.Text (ANSI→Rich markup) pour que Textual le rende proprement.
+    """Candlestick chart sur les bars récentes, avec couleurs Nothing douces.
+    Retourne un rich.Text (ANSI→Rich markup) pour rendu Textual propre.
     """
     plt.clf()
     plt.theme("pro")
     plt.plotsize(width, height)
-    if not opp.price_history:
+    plt.date_form("Y-m-d")
+    if not opp.recent_bars:
         return Text("no price history")
-    xs = list(range(len(opp.price_history)))
-    closes = [p[1] for p in opp.price_history]
-    plt.plot(xs, closes, marker="braille")
-    plt.hline(opp.trade_plan.entry, color="white")
-    plt.hline(opp.trade_plan.target, color="green")
-    plt.hline(opp.trade_plan.stop, color="red")
-    plt.xticks([0, len(xs) - 1],
-               [opp.price_history[0][0].isoformat(),
-                opp.price_history[-1][0].isoformat()])
+
+    bars = opp.recent_bars
+    dates = [b.date.strftime("%Y-%m-%d") for b in bars]
+    data = {
+        "Open":  [b.open for b in bars],
+        "High":  [b.high for b in bars],
+        "Low":   [b.low for b in bars],
+        "Close": [b.close for b in bars],
+    }
+    # plotext.candlestick : colors = [up_color, down_color]
+    plt.candlestick(dates, data, colors=[SAUGE, TERRA])
+
+    # Lignes horizontales du trade plan, en tons doux
+    plt.hline(opp.trade_plan.entry, color=OFF_WHITE)
+    plt.hline(opp.trade_plan.target, color=SAUGE)
+    plt.hline(opp.trade_plan.stop, color=TERRA)
+
     return Text.from_ansi(plt.build())
 
 

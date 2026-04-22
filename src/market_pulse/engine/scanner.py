@@ -33,7 +33,7 @@ class Opportunity:
     score: float
     trade_plan: TradePlan
     signal_details: list[tuple[str, float, dict]]
-    price_history: list[tuple[date, float]]  # (date, close) derniers ~180 jours
+    recent_bars: list[Bar]  # derniers ~90 jours OHLCV pour le chart candlestick
 
 
 def _bars_to_df(bars: list[Bar]) -> pd.DataFrame:
@@ -95,13 +95,12 @@ async def scan(
         plan = compute_trade_plan(df, horizon=horizon)
         if plan.risk_reward < min_rr:
             return None
-        # Historique de prix réduit pour l'écran détail (180 derniers jours max)
-        tail = bars[-180:]
-        price_history = [(b.date, b.close) for b in tail]
+        # Bars récentes pour chart candlestick (90 derniers jours max)
+        recent_bars = bars[-90:]
         return Opportunity(
             ticker=ticker, horizon=horizon, score=score,
             trade_plan=plan, signal_details=details,
-            price_history=price_history,
+            recent_bars=recent_bars,
         )
 
     results = await asyncio.gather(*(_process(t) for t in tickers))
