@@ -124,7 +124,9 @@ class DetailScreen(Screen):
         o = self.opp
         name = o.meta.long_name if o.meta else ""
         name_part = f"  ·  {name}" if name else ""
+        direction = o.trade_plan.direction.upper()
         return (f"{o.ticker}{name_part}"
+                f"  ·  {direction}"
                 f"  ·  SCORE {o.score:.1f} / 100"
                 f"  ·  horizon {o.horizon.upper()}")
 
@@ -203,17 +205,19 @@ class DetailScreen(Screen):
 
     def _trade_plan_text(self) -> str:
         tp = self.opp.trade_plan
-        uplift = (tp.target - tp.entry) / tp.entry * 100 if tp.entry else 0
-        downside = (tp.stop - tp.entry) / tp.entry * 100 if tp.entry else 0
+        target_pct = (tp.target - tp.entry) / tp.entry * 100 if tp.entry else 0
+        stop_pct = (tp.stop - tp.entry) / tp.entry * 100 if tp.entry else 0
         horizon_desc = {
             "1d": "1 day", "1w": "5-10 trading days",
             "1m": "3-6 weeks", "1y": "6-18 months",
         }.get(tp.horizon, "—")
+        action = "BUY (long)" if tp.direction == "long" else "SELL SHORT"
         return (
-            f"TRADE PLAN · {tp.horizon.upper()}\n"
+            f"TRADE PLAN · {tp.horizon.upper()} · {tp.direction.upper()}\n"
+            f" · Action        {action}\n"
             f" · Entry         {tp.entry:>10.2f}\n"
-            f" · Target (TP)   {tp.target:>10.2f}   {uplift:+6.2f}%\n"
-            f" · Stop (SL)     {tp.stop:>10.2f}   {downside:+6.2f}%\n"
+            f" · Target (TP)   {tp.target:>10.2f}   {target_pct:+6.2f}%\n"
+            f" · Stop (SL)     {tp.stop:>10.2f}   {stop_pct:+6.2f}%\n"
             f" · Risk/Reward   {tp.risk_reward:>10.2f}\n"
             f" · Horizon       {horizon_desc}"
         )

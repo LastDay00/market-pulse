@@ -1,4 +1,5 @@
 """Écran scanner : table des opportunités."""
+from rich.text import Text
 from textual.app import ComposeResult
 from textual.binding import Binding
 from textual.screen import Screen
@@ -21,19 +22,29 @@ class ScannerScreen(Screen):
 
     def compose(self) -> ComposeResult:
         yield Header(show_clock=True)
+        n_long = sum(1 for o in self.opportunities if o.trade_plan.direction == "long")
+        n_short = len(self.opportunities) - n_long
         yield Static(
-            f"· market pulse · horizon 1W · {len(self.opportunities)} opportunities ·",
+            f"· market pulse · horizon 1W · {len(self.opportunities)} opportunities "
+            f"({n_long} long · {n_short} short) ·",
             classes="highlight-amber",
         )
         table = DataTable(cursor_type="row", zebra_stripes=False, id="opps-table")
-        table.add_columns("#", "TICKER", "SCORE", "ENTRY", "TP", "SL", "R/R", "▲%")
+        table.add_columns("#", "TICKER", "DIR", "SCORE", "ENTRY", "TP", "SL", "R/R", "▲%")
         for i, opp in enumerate(self.opportunities, start=1):
             tp = opp.trade_plan
-            uplift = (tp.target - tp.entry) / tp.entry * 100 if tp.entry else 0
+            # uplift = potentiel gain en % dans la direction du trade
+            if tp.direction == "long":
+                uplift = (tp.target - tp.entry) / tp.entry * 100 if tp.entry else 0
+                dir_text = Text("LONG ", style="#7FB069 bold")
+            else:
+                uplift = (tp.entry - tp.target) / tp.entry * 100 if tp.entry else 0
+                dir_text = Text("SHORT", style="#C97064 bold")
             score_str = f"{render_score_bar(opp.score)} {opp.score:5.1f}"
             table.add_row(
                 f"{i:02d}",
                 opp.ticker,
+                dir_text,
                 score_str,
                 f"{tp.entry:>8.2f}",
                 f"{tp.target:>8.2f}",

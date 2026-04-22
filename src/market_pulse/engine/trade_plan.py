@@ -1,4 +1,9 @@
-"""Calcul du plan de trade : entrée, objectif, stop, R:R."""
+"""Calcul du plan de trade : entrée, objectif, stop, R:R.
+
+Supporte deux directions :
+- 'long'  : TP au-dessus, SL en-dessous de l'entrée
+- 'short' : TP en-dessous, SL au-dessus (vente à découvert)
+"""
 from dataclasses import dataclass
 
 import pandas as pd
@@ -17,11 +22,14 @@ class TradePlan:
     stop: float
     risk_reward: float
     horizon: str
+    direction: str = "long"  # 'long' ou 'short'
 
 
-def compute_trade_plan(df: pd.DataFrame, horizon: str) -> TradePlan:
+def compute_trade_plan(df: pd.DataFrame, horizon: str, direction: str = "long") -> TradePlan:
     if horizon not in ATR_MULTIPLIERS:
         raise ValueError(f"unknown horizon: {horizon}")
+    if direction not in ("long", "short"):
+        raise ValueError(f"unknown direction: {direction}")
 
     entry = float(df["Close"].iloc[-1])
     atr_values = atr(df["High"], df["Low"], df["Close"], period=14).dropna()
@@ -34,14 +42,21 @@ def compute_trade_plan(df: pd.DataFrame, horizon: str) -> TradePlan:
     recent_high = float(df["High"].iloc[-lookback_r:].max())
     recent_low = float(df["Low"].iloc[-lookback_s:].min())
 
-    atr_target = entry + k * current_atr
-    target = min(atr_target, recent_high) if recent_high > entry else atr_target
-
-    atr_stop = entry - 1.0 * current_atr
-    support_stop = recent_low - 0.5 * current_atr
-    stop = max(atr_stop, support_stop)
-
-    rr = (target - entry) / (entry - stop) if entry > stop else 0.0
+    if direction == "long":
+        atr_target = entry + k * current_atr
+        target = min(atr_target, recent_high) if recent_high > entry else atr_target
+        atr_stop = entry - 1.0 * current_atr
+        support_stop = recent_low - 0.5 * current_atr
+        stop = max(atr_stop, support_stop)
+        rr = (target - entry) / (entry - stop) if entry > stop else 0.0
+    else:  # short
+        atr_target = entry - k * current_atr
+        # Pour un short, le TP est en-dessous. Borné par le plus bas récent (+buffer si proche)
+        target = max(atr_target, recent_low) if recent_low < entry else atr_target
+        atr_stop = entry + 1.0 * current_atr
+        resistance_stop = recent_high + 0.5 * current_atr
+        stop = min(atr_stop, resistance_stop)
+        rr = (entry - target) / (stop - entry) if stop > entry else 0.0
 
     return TradePlan(entry=entry, target=target, stop=stop,
-                     risk_reward=rr, horizon=horizon)
+                     risk_reward=rr, horizon=horizon, direction=direction)

@@ -14,15 +14,28 @@ from market_pulse.engine.signals.weekly import (
     BollingerSqueezeBreakout, MA5AboveMA20, MACDCrossover,
     RelativeStrength, RSIDivergence, VolumeConfirmation,
 )
+from market_pulse.engine.signals.weekly_bear import (
+    BollingerSqueezeBreakdownBear, MA5BelowMA20Bear, MACDBearCrossover,
+    RelativeWeaknessBear, RSIOverboughtBear, VolumeConfirmationBear,
+)
 from market_pulse.engine.trade_plan import TradePlan, compute_trade_plan
 
-HORIZON_SIGNALS_1W = [
+HORIZON_SIGNALS_1W_LONG = [
     RSIDivergence(),
     MACDCrossover(),
     BollingerSqueezeBreakout(),
     MA5AboveMA20(),
     VolumeConfirmation(),
     RelativeStrength(benchmark_df=None),
+]
+
+HORIZON_SIGNALS_1W_SHORT = [
+    RSIOverboughtBear(),
+    MACDBearCrossover(),
+    BollingerSqueezeBreakdownBear(),
+    MA5BelowMA20Bear(),
+    VolumeConfirmationBear(),
+    RelativeWeaknessBear(benchmark_df=None),
 ]
 
 
@@ -117,15 +130,23 @@ async def scan(
         raise NotImplementedError("Phase 1 supports only horizon='1w'")
 
     cache = BarCache(cache_path)
-    signals = HORIZON_SIGNALS_1W
 
     async def _process(ticker: str) -> Opportunity | None:
         bars = await _load_bars(ticker, provider, cache, lookback_days)
         if len(bars) < 30:
             return None
         df = _bars_to_df(bars)
-        score, details = _score_ticker(df, signals)
-        plan = compute_trade_plan(df, horizon=horizon)
+
+        # Évaluer les 2 directions en parallèle, garder la meilleure
+        long_score, long_details = _score_ticker(df, HORIZON_SIGNALS_1W_LONG)
+        short_score, short_details = _score_ticker(df, HORIZON_SIGNALS_1W_SHORT)
+
+        if long_score >= short_score:
+            direction, score, details = "long", long_score, long_details
+        else:
+            direction, score, details = "short", short_score, short_details
+
+        plan = compute_trade_plan(df, horizon=horizon, direction=direction)
         if plan.risk_reward < min_rr:
             return None
         recent_bars = bars[-252:]
