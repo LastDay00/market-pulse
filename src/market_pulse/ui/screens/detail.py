@@ -10,7 +10,7 @@ from textual.binding import Binding
 from textual.containers import Container, Horizontal, VerticalScroll
 from textual.screen import Screen
 from textual.widgets import Footer, Header, Static
-from textual_image.widget import Image as TxtImage
+from textual_image.widget import AutoImage as TxtImage
 
 from market_pulse.data.models import Bar
 from market_pulse.engine.scanner import Opportunity, enrich_opportunity
@@ -126,6 +126,7 @@ class DetailScreen(Screen):
         Binding("escape", "app.pop_screen", "Retour", show=True),
         Binding("f", "load_data", "Charger/Rafraîchir données", show=True),
         Binding("g", "open_chart_external", "Chart en plein écran", show=True),
+        Binding("p", "diag_protocol", "Diag protocole image", show=False),
         Binding("q", "app.quit", "Quitter", show=True),
     ]
 
@@ -235,6 +236,19 @@ class DetailScreen(Screen):
                 self._chart_png_path.unlink()
             except Exception:
                 pass
+
+    def action_diag_protocol(self) -> None:
+        """Affiche le protocole d'image détecté par textual-image au démarrage."""
+        import os
+        from textual_image.renderable import Image as DetectedRenderable
+        term_program = os.environ.get("TERM_PROGRAM", "?")
+        term = os.environ.get("TERM", "?")
+        # __module__ nous dit quelle impl a été retenue : sixel, tgp, halfcell, unicode
+        module = DetectedRenderable.__module__.split(".")[-1]
+        self.notify(
+            f"TERM_PROGRAM={term_program}  TERM={term}  protocole={module}",
+            timeout=15.0,
+        )
 
     def action_open_chart_external(self) -> None:
         """Ouvre le chart PNG dans le viewer système (Preview.app sur macOS,
