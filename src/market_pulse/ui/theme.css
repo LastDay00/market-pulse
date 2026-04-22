@@ -1,0 +1,63 @@
+/* Market Pulse — palette Nothing douce */
+
+Screen {
+    background: #0A0A0B;
+    color: #E8E6E3;
+}
+
+Header {
+    background: #0A0A0B;
+    color: #E8E6E3;
+    height: 1;
+    border-bottom: solid #2A2A2E;
+}
+
+Footer {
+    background: #0A0A0B;
+    color: #8A8680;
+    border-top: solid #2A2A2E;
+}
+
+DataTable {
+    background: #0A0A0B;
+    color: #E8E6E3;
+}
+
+DataTable > .datatable--header {
+    background: #0A0A0B;
+    color: #8A8680;
+    text-style: none;
+}
+
+DataTable > .datatable--cursor {
+    background: #2A2A2E;
+    color: #E8B45D;
+}
+
+.score-high {
+    color: #7FB069;
+}
+
+.score-mid {
+    color: #E8E6E3;
+}
+
+.score-low {
+    color: #8A8680;
+}
+
+.alert-positive {
+    color: #7FB069;
+}
+
+.alert-negative {
+    color: #C97064;
+}
+
+.accent-coral {
+    color: #E85D5D;
+}
+
+.highlight-amber {
+    color: #E8B45D;
+}
