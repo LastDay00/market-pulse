@@ -1,6 +1,6 @@
 """Cache SQLite pour les barres OHLCV."""
 import sqlite3
-from datetime import date
+from datetime import date, datetime
 from pathlib import Path
 
 from market_pulse.data.models import Bar
@@ -64,6 +64,19 @@ class BarCache:
         )
         row = cur.fetchone()
         return date.fromisoformat(row[0]) if row and row[0] else None
+
+    def latest_fetched_at(self, ticker: str) -> datetime | None:
+        """Timestamp du dernier fetch pour ce ticker, None si aucun."""
+        cur = self._conn.execute(
+            "SELECT MAX(fetched_at) FROM bars WHERE ticker = ?", (ticker,)
+        )
+        row = cur.fetchone()
+        if not row or not row[0]:
+            return None
+        try:
+            return datetime.fromisoformat(row[0])
+        except ValueError:
+            return None
 
     def close(self) -> None:
         self._conn.close()

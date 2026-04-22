@@ -1,6 +1,7 @@
 """CLI entry point : `python -m market_pulse` ou `market-pulse`."""
 import asyncio
 import sys
+import time
 
 from market_pulse.config import CACHE_DB, ensure_app_dir
 from market_pulse.data.providers.yfinance_provider import YFinanceProvider
@@ -11,12 +12,28 @@ from market_pulse.universe.loaders import load_sp500, load_sp500_names
 RESCAN_RETURN_CODE = 42
 
 
-async def _do_scan():
+async def _do_scan(force_refresh: bool = False):
     ensure_app_dir()
     tickers = load_sp500()
     names = load_sp500_names()
     provider = YFinanceProvider(max_concurrency=10)
-    print(f"· scanning {len(tickers)} tickers (horizon 1W) ...")
+
+    mode = "force refresh (cache bypass)" if force_refresh else "cache-aware"
+    print(f"· scanning {len(tickers)} tickers (horizon 1W, {mode}) ...")
+    t0 = time.time()
+
+    last_print = [0.0]
+    def on_progress(done: int, total: int, ticker: str) -> None:
+        now = time.time()
+        if now - last_print[0] > 0.5 or done == total:
+            pct = done / total * 100
+            bar_len = 30
+            filled = int(done / total * bar_len)
+            bar = "█" * filled + "░" * (bar_len - filled)
+            print(f"\r  {bar} {done:>3}/{total}  {pct:5.1f}%  {ticker:<8}",
+                  end="", flush=True)
+            last_print[0] = now
+
     opps = await scan(
         tickers=tickers,
         horizon="1w",
@@ -24,21 +41,26 @@ async def _do_scan():
         cache_path=CACHE_DB,
         min_rr=2.0,
         names=names,
+        force_refresh=force_refresh,
+        progress_callback=on_progress,
     )
-    print(f"· found {len(opps)} opportunities")
+    elapsed = time.time() - t0
+    print(f"\n· found {len(opps)} opportunities in {elapsed:.1f}s")
     return opps
 
 
 def main() -> int:
-    """Boucle scan → UI. Si l'UI sort avec return_code=42, on rescan et on relance."""
+    """Boucle scan → UI. Sur return_code=42, force-refresh et relance."""
+    force_refresh = False
     try:
         while True:
-            opps = asyncio.run(_do_scan())
+            opps = asyncio.run(_do_scan(force_refresh=force_refresh))
             app = MarketPulseApp(opps)
             app.run()
             if app.return_code != RESCAN_RETURN_CODE:
                 return 0
-            # else : rescan et relance
+            # Relance avec force_refresh=True : R signifie "je veux des données fraîches"
+            force_refresh = True
     except KeyboardInterrupt:
         print("\n· interrupted")
         return 130

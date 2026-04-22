@@ -98,13 +98,35 @@ def _bars_to_df(bars: list[Bar]) -> pd.DataFrame:
 
 
 async def _load_bars(
-    ticker: str, provider: Provider, cache: BarCache, lookback_days: int
+    ticker: str, provider: Provider, cache: BarCache, lookback_days: int,
+    force_refresh: bool = False,
 ) -> list[Bar]:
+    """Charge les bars depuis le cache ou fetch frais.
+
+    Cache hit si (et seulement si) :
+      - on est weekend/jour férié et la dernière bar est du dernier jour ouvré, OU
+      - la dernière bar date est aujourd'hui ET le fetch date de moins de 15 min
+
+    Sinon on refetch. force_refresh=True bypasse totalement le cache.
+    """
+    from datetime import datetime
     today = date.today()
     start = today - timedelta(days=lookback_days)
     cached = cache.get_bars(ticker)
-    if cached and cached[-1].date >= today - timedelta(days=3):
-        return cached
+
+    if not force_refresh and cached:
+        last_bar_date = cached[-1].date
+        fetched_at = cache.latest_fetched_at(ticker)
+        # Si la dernière bar est d'aujourd'hui, cache valide si fetch < 15 min
+        if last_bar_date == today:
+            if fetched_at and (datetime.now() - fetched_at).total_seconds() < 900:
+                return cached
+        # Si la dernière bar est d'hier ou avant, cache valide si weekend/jour férié
+        elif last_bar_date >= today - timedelta(days=1):
+            # On est potentiellement un dimanche/lundi matin : tolérance 12h
+            if fetched_at and (datetime.now() - fetched_at).total_seconds() < 12 * 3600:
+                return cached
+
     fresh = await provider.fetch_bars(ticker, start, today)
     if fresh:
         cache.upsert_bars(ticker, fresh)
@@ -127,14 +149,21 @@ async def scan(
     lookback_days: int = 365,
     enrich_top_n: int = 20,
     names: dict[str, str] | None = None,
+    force_refresh: bool = False,
+    progress_callback=None,
 ) -> list[Opportunity]:
     if horizon != "1w":
         raise NotImplementedError("Phase 1 supports only horizon='1w'")
 
     cache = BarCache(cache_path)
+    counter = {"done": 0, "total": len(tickers)}
 
     async def _process(ticker: str) -> Opportunity | None:
-        bars = await _load_bars(ticker, provider, cache, lookback_days)
+        bars = await _load_bars(ticker, provider, cache, lookback_days,
+                                force_refresh=force_refresh)
+        counter["done"] += 1
+        if progress_callback:
+            progress_callback(counter["done"], counter["total"], ticker)
         if len(bars) < 30:
             return None
         df = _bars_to_df(bars)
