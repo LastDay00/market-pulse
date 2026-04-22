@@ -631,15 +631,25 @@ class DetailScreen(Screen):
     def _render_financial_block(
         self, title: str, lines, periods: list[str]
     ) -> Text:
-        """Rend un bloc financier en Rich Text avec chiffres colorés + % variation.
+        """Rend un bloc financier Rich Text qui REMPLIT toute la largeur dispo.
 
-        Alignement strict :
-        - Préfixe ligne : "  · " (4 chars)
-        - Label tronqué ou paddé à LABEL_W (36 chars)
-        - Chaque cellule : "  " + {num:>15} + "  " + {pct:>7}  =  26 chars
-        - Header : "  " + espaces LABEL_W + chaque colonne "  " + {period:>24}
+        Layout adaptatif :
+        - PREFIX=4 ("  · ")  +  LABEL_W=36 (label tronqué/paddé)
+        - Chaque cellule : "  " + {num:>NUM_W} + "  " + {pct:>7}
+        - NUM_W est calculé pour que la ligne remplisse toute la largeur panel
         """
+        import shutil
+        term_w = shutil.get_terminal_size((180, 50)).columns
+        # Largeur interne du panel = terminal - border(2) - padding(2) - margin(2)
+        panel_w = max(100, term_w - 6)
         LABEL_W = 36
+        PREFIX = 4
+        PCT_W = 7
+        CELL_FIXED = 2 + 2 + PCT_W  # " " prefix + "  " gap + pct width = 11
+        n_cols = max(1, len(periods))
+        remaining = panel_w - PREFIX - LABEL_W
+        NUM_W = max(15, (remaining // n_cols) - CELL_FIXED)
+
         text = Text()
         f = self.opp.fundamentals
         if not f or not lines:
@@ -652,19 +662,14 @@ class DetailScreen(Screen):
         title_full = f"{title}" + (f" · en {currency}" if currency else "")
 
         text.append(f"{title_full}\n", style="bold #E8B45D")
-        # Header aligné sur les cellules :
-        #   Ligne :  "  · " (4)  +  {label:LABEL_W}  +  N×("  " + num:15 + "  " + pct:7)
-        #   Header :  "    " (4)  +  {blanks:LABEL_W} +  N×("  " + period:15 + 2 + 7 blanks)
-        # → chaque période right-alignée sur 15 chars, sous la colonne des num
-        text.append(" " * (4 + LABEL_W))
-        header_cells = "".join(f"  {p:>15}  {'':>7}" for p in periods)
+        # Header : {blanks PREFIX+LABEL_W} + N × ("  " + {p:>NUM_W} + "  " + 7 blanks)
+        text.append(" " * (PREFIX + LABEL_W))
+        header_cells = "".join(f"  {p:>{NUM_W}}  {'':>{PCT_W}}" for p in periods)
         text.append(header_cells + "\n", style="#8A8680")
 
-        n_cols = len(periods)
         for line in lines:
             vals = line.values[:n_cols]
             label_fr = self._translate_label(line.label)
-            # Tronque si trop long, padde si trop court — garde l'alignement strict
             if len(label_fr) > LABEL_W:
                 label_disp = label_fr[: LABEL_W - 1] + "…"
             else:
@@ -678,11 +683,11 @@ class DetailScreen(Screen):
                 color = self._color_for_direction(v, prev, preference)
                 num = "—" if v is None else _fmt_full_int(v)
                 if v is None or prev is None or abs(prev) < 1e-9:
-                    pct_str = "       "
+                    pct_str = " " * PCT_W
                 else:
                     pct = (v - prev) / abs(prev) * 100
                     pct_str = f"{pct:+6.1f}%"
-                cell = f"{num:>15}  {pct_str}"
+                cell = f"{num:>{NUM_W}}  {pct_str:>{PCT_W}}"
                 text.append("  ")
                 if color:
                     text.append(cell, style=color)
