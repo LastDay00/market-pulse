@@ -157,14 +157,13 @@ class DetailScreen(Screen):
             # Fondamentaux : valorisation, rentabilité, croissance, santé bilan
             yield Static(self._valuation_text(),
                          id="valuation-panel", classes="panel")
-            # États financiers ANNUELS (3 dernières années) full width
+            # États financiers stackés (tables denses, panels ajustés au contenu)
             yield Static(self._income_text(),
                          id="income-panel", classes="panel")
             yield Static(self._balance_text(),
                          id="balance-panel", classes="panel")
             yield Static(self._cashflow_text(),
                          id="cashflow-panel", classes="panel")
-            # États financiers TRIMESTRIELS (4 derniers trimestres) full width
             yield Static(self._income_q_text(),
                          id="income-q-panel", classes="panel")
             yield Static(self._balance_q_text(),
@@ -631,24 +630,13 @@ class DetailScreen(Screen):
     def _render_financial_block(
         self, title: str, lines, periods: list[str]
     ) -> Text:
-        """Rend un bloc financier Rich Text qui REMPLIT toute la largeur dispo.
-
-        Layout adaptatif :
-        - PREFIX=4 ("  · ")  +  LABEL_W=36 (label tronqué/paddé)
-        - Chaque cellule : "  " + {num:>NUM_W} + "  " + {pct:>7}
-        - NUM_W est calculé pour que la ligne remplisse toute la largeur panel
-        """
-        import shutil
-        term_w = shutil.get_terminal_size((180, 50)).columns
-        # Largeur interne du panel = terminal - border(2) - padding(2) - margin(2)
-        panel_w = max(100, term_w - 6)
-        LABEL_W = 36
+        """Rend un bloc financier Rich Text en largeur fixe compacte
+        (pas de stretch, les chiffres restent denses)."""
+        LABEL_W = 30
         PREFIX = 4
         PCT_W = 7
-        CELL_FIXED = 2 + 2 + PCT_W  # " " prefix + "  " gap + pct width = 11
+        NUM_W = 15
         n_cols = max(1, len(periods))
-        remaining = panel_w - PREFIX - LABEL_W
-        NUM_W = max(15, (remaining // n_cols) - CELL_FIXED)
 
         text = Text()
         f = self.opp.fundamentals
