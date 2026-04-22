@@ -5,13 +5,30 @@ DATA_DIR = Path(__file__).parent / "data"
 
 # Nom lisible → nom du fichier CSV
 AVAILABLE_INDICES = {
-    "sp500":       "sp500.csv",
-    "nasdaq100":   "nasdaq100.csv",
+    # US
+    "sp500":       "sp500.csv",          # S&P 500 large caps
+    "nasdaq100":   "nasdaq100.csv",      # Nasdaq 100 tech-heavy
+    "sp600":       "sp600.csv",          # S&P SmallCap 600 (équivalent Russell 2000 propre)
+    # France
     "cac40":       "cac40.csv",
     "cac_next20":  "cac_next20.csv",
+    # Allemagne / Autriche / Suisse
     "dax40":       "dax40.csv",
+    "smi":         "smi.csv",
+    # Benelux
+    "aex25":       "aex25.csv",
+    "bel20":       "bel20.csv",
+    # UK
+    "ftse100":     "ftse100.csv",
+    # Sud Europe
     "ftsemib":     "ftsemib.csv",
     "ibex35":      "ibex35.csv",
+    # Scandinavie
+    "omxs30":      "omxs30.csv",
+    # Pan-européen
+    "stoxx50":     "stoxx50.csv",
+    # ETFs UCITS (focus investisseur européen sur TR)
+    "ucits_etfs":  "ucits_etfs.csv",
 }
 
 
