@@ -57,12 +57,18 @@ class FinancialLine:
 
 @dataclass(frozen=True)
 class Fundamentals:
-    """États financiers annuels + dernières lignes du bilan/cash flow."""
+    """États financiers annuels ET trimestriels."""
     ticker: str
-    periods: list[str]                   # dates des colonnes (ex. ['2024', '2023', '2022'])
-    income: list[FinancialLine] = field(default_factory=list)    # compte de résultat
-    balance: list[FinancialLine] = field(default_factory=list)   # bilan
-    cashflow: list[FinancialLine] = field(default_factory=list)  # tableau flux de trésorerie
+    # Annuel (3 dernières années)
+    periods: list[str]
+    income: list[FinancialLine] = field(default_factory=list)
+    balance: list[FinancialLine] = field(default_factory=list)
+    cashflow: list[FinancialLine] = field(default_factory=list)
+    # Trimestriel (4 derniers trimestres, ex. ['Q1-26', 'Q4-25', 'Q3-25', 'Q2-25'])
+    periods_q: list[str] = field(default_factory=list)
+    income_q: list[FinancialLine] = field(default_factory=list)
+    balance_q: list[FinancialLine] = field(default_factory=list)
+    cashflow_q: list[FinancialLine] = field(default_factory=list)
 
 
 @dataclass(frozen=True)

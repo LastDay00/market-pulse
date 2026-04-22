@@ -101,7 +101,8 @@ DataTable > .datatable--cursor {
     margin-bottom: 1;
 }
 
-#income-panel, #balance-panel, #cashflow-panel {
+#income-panel, #balance-panel, #cashflow-panel,
+#income-q-panel, #balance-q-panel, #cashflow-q-panel {
     height: auto;
     width: 100%;
     margin-bottom: 1;

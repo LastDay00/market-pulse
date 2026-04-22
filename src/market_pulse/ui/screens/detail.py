@@ -143,14 +143,20 @@ class DetailScreen(Screen):
             # Fondamentaux : valorisation, rentabilité, croissance, santé bilan
             yield Static(self._valuation_text(),
                          id="valuation-panel", classes="panel")
-            # États financiers : stack vertical pour avoir la largeur complète
-            # et afficher les chiffres sans abréviation (ex. "523 000 000 000")
+            # États financiers ANNUELS (3 dernières années) full width
             yield Static(self._income_text(),
                          id="income-panel", classes="panel")
             yield Static(self._balance_text(),
                          id="balance-panel", classes="panel")
             yield Static(self._cashflow_text(),
                          id="cashflow-panel", classes="panel")
+            # États financiers TRIMESTRIELS (4 derniers trimestres) full width
+            yield Static(self._income_q_text(),
+                         id="income-q-panel", classes="panel")
+            yield Static(self._balance_q_text(),
+                         id="balance-q-panel", classes="panel")
+            yield Static(self._cashflow_q_text(),
+                         id="cashflow-q-panel", classes="panel")
         yield Footer()
 
     def _title_line(self) -> str:
@@ -198,8 +204,10 @@ class DetailScreen(Screen):
             self.query_one("#income-panel", Static).update(self._income_text())
             self.query_one("#balance-panel", Static).update(self._balance_text())
             self.query_one("#cashflow-panel", Static).update(self._cashflow_text())
+            self.query_one("#income-q-panel", Static).update(self._income_q_text())
+            self.query_one("#balance-q-panel", Static).update(self._balance_q_text())
+            self.query_one("#cashflow-q-panel", Static).update(self._cashflow_q_text())
         except Exception:
-            # Les widgets peuvent ne pas être encore montés si on appelle tôt
             pass
 
     def _subtitle_line(self) -> str:
@@ -493,28 +501,32 @@ class DetailScreen(Screen):
             return "#7FB069" if not going_up else "#C97064"
         return ""
 
-    def _render_financial_block(self, title: str, lines) -> Text:
-        """Rend un bloc financier en Rich Text avec chiffres colorés + % variation."""
-        f = self.opp.fundamentals
+    def _render_financial_block(
+        self, title: str, lines, periods: list[str]
+    ) -> Text:
+        """Rend un bloc financier en Rich Text avec chiffres colorés + % variation.
+
+        periods : liste des labels de colonne (années pour annuel, Qn-YY pour trimestriel).
+        """
         text = Text()
+        f = self.opp.fundamentals
         if not f or not lines:
             text.append(f"{title}\n", style="bold")
             text.append(" (aucune donnée — appuie sur F pour forcer le chargement)",
                         style="#8A8680")
             return text
 
-        periods = f.periods[:3] if f.periods else []
         currency = self.opp.meta.currency if self.opp.meta else ""
         title_full = f"{title}" + (f" · en {currency}" if currency else "")
 
         text.append(f"{title_full}\n", style="bold #E8B45D")
-        # Cell : chiffre (15) + 2 espaces + % (7) = 24 chars par colonne
         text.append("  " + " " * 34
                     + "  ".join(f"{p:>24}" for p in periods) + "\n",
                     style="#8A8680")
 
+        n_cols = len(periods)
         for line in lines:
-            vals = line.values[:3]
+            vals = line.values[:n_cols]
             label_fr = self._translate_label(line.label)
             preference = self.DIRECTION_PREFERENCE.get(line.label, "neutral")
 
@@ -523,7 +535,6 @@ class DetailScreen(Screen):
                 prev = vals[i + 1] if i + 1 < len(vals) else None
                 color = self._color_for_direction(v, prev, preference)
                 num = "—" if v is None else _fmt_full_int(v)
-                # % variation vs période précédente
                 if v is None or prev is None or abs(prev) < 1e-9:
                     pct_str = "       "
                 else:
@@ -538,20 +549,53 @@ class DetailScreen(Screen):
             text.append("\n")
         return text
 
-    def _income_text(self) -> str:
+    def _income_text(self) -> Text:
         f = self.opp.fundamentals
-        return self._render_financial_block("COMPTE DE RÉSULTAT",
-                                             f.income if f else [])
+        return self._render_financial_block(
+            "COMPTE DE RÉSULTAT · ANNUEL",
+            f.income if f else [],
+            f.periods if f else [],
+        )
 
-    def _balance_text(self) -> str:
+    def _balance_text(self) -> Text:
         f = self.opp.fundamentals
-        return self._render_financial_block("BILAN",
-                                             f.balance if f else [])
+        return self._render_financial_block(
+            "BILAN · ANNUEL",
+            f.balance if f else [],
+            f.periods if f else [],
+        )
 
-    def _cashflow_text(self) -> str:
+    def _cashflow_text(self) -> Text:
         f = self.opp.fundamentals
-        return self._render_financial_block("FLUX DE TRÉSORERIE",
-                                             f.cashflow if f else [])
+        return self._render_financial_block(
+            "FLUX DE TRÉSORERIE · ANNUEL",
+            f.cashflow if f else [],
+            f.periods if f else [],
+        )
+
+    def _income_q_text(self) -> Text:
+        f = self.opp.fundamentals
+        return self._render_financial_block(
+            "COMPTE DE RÉSULTAT · TRIMESTRIEL (4 derniers trimestres)",
+            f.income_q if f else [],
+            f.periods_q if f else [],
+        )
+
+    def _balance_q_text(self) -> Text:
+        f = self.opp.fundamentals
+        return self._render_financial_block(
+            "BILAN · TRIMESTRIEL (4 derniers trimestres)",
+            f.balance_q if f else [],
+            f.periods_q if f else [],
+        )
+
+    def _cashflow_q_text(self) -> Text:
+        f = self.opp.fundamentals
+        return self._render_financial_block(
+            "FLUX DE TRÉSORERIE · TRIMESTRIEL (4 derniers trimestres)",
+            f.cashflow_q if f else [],
+            f.periods_q if f else [],
+        )
 
     def _news_text(self) -> str:
         lines = ["ACTUALITÉS RÉCENTES"]

@@ -121,27 +121,39 @@ class YFinanceProvider(Provider):
             def _fetch():
                 t = yf.Ticker(ticker)
                 return (
-                    t.financials,        # income statement annuel
-                    t.balance_sheet,     # bilan annuel
-                    t.cashflow,          # cash flow annuel
+                    t.financials,             # income statement annuel
+                    t.balance_sheet,          # bilan annuel
+                    t.cashflow,               # cash flow annuel
+                    t.quarterly_financials,   # compte de résultat trimestriel
+                    t.quarterly_balance_sheet,
+                    t.quarterly_cashflow,
                 )
 
             try:
-                income_df, balance_df, cashflow_df = await loop.run_in_executor(None, _fetch)
+                (income_df, balance_df, cashflow_df,
+                 income_q_df, balance_q_df, cashflow_q_df) = await loop.run_in_executor(None, _fetch)
             except Exception:
                 return None
 
-            # yfinance renvoie des DataFrames avec colonnes = dates (récentes à gauche),
-            # lignes = libellés. Certaines peuvent être vides selon le ticker.
-            def _df_to_lines(df, wanted: list[str]) -> tuple[list[str], list[FinancialLine]]:
+            def _period_label(col, quarterly: bool) -> str:
+                if not hasattr(col, "year"):
+                    return str(col)
+                if not quarterly:
+                    return str(col.year)
+                q = (col.month - 1) // 3 + 1
+                return f"Q{q}-{col.year % 100:02d}"
+
+            def _df_to_lines(df, wanted: list[str], quarterly: bool = False,
+                             max_cols: int = 3) -> tuple[list[str], list[FinancialLine]]:
                 if df is None or df.empty:
                     return [], []
-                # Périodes = colonnes, formatées en année
-                periods = [str(c.year) if hasattr(c, "year") else str(c) for c in df.columns]
+                # On garde uniquement les N colonnes les plus récentes
+                cols = list(df.columns)[:max_cols]
+                periods = [_period_label(c, quarterly) for c in cols]
                 lines: list[FinancialLine] = []
                 for label in wanted:
                     if label in df.index:
-                        row = df.loc[label]
+                        row = df.loc[label][cols]
                         vals = [
                             (float(v) if v is not None and str(v) != "nan" else None)
                             for v in row.tolist()
@@ -168,13 +180,23 @@ class YFinanceProvider(Provider):
                 "Cash Dividends Paid", "Repurchase Of Capital Stock",
             ]
 
-            periods, income_lines = _df_to_lines(income_df, income_labels)
+            # Annuel — 3 colonnes
+            periods, income_lines = _df_to_lines(income_df, income_labels, max_cols=3)
             if not periods:
-                periods_b, balance_lines = _df_to_lines(balance_df, balance_labels)
-                periods = periods_b
-            else:
-                _, balance_lines = _df_to_lines(balance_df, balance_labels)
-            _, cashflow_lines = _df_to_lines(cashflow_df, cashflow_labels)
+                periods, _ = _df_to_lines(balance_df, balance_labels, max_cols=3)
+            _, balance_lines = _df_to_lines(balance_df, balance_labels, max_cols=3)
+            _, cashflow_lines = _df_to_lines(cashflow_df, cashflow_labels, max_cols=3)
+
+            # Trimestriel — 4 colonnes
+            periods_q, income_q_lines = _df_to_lines(
+                income_q_df, income_labels, quarterly=True, max_cols=4)
+            if not periods_q:
+                periods_q, _ = _df_to_lines(
+                    balance_q_df, balance_labels, quarterly=True, max_cols=4)
+            _, balance_q_lines = _df_to_lines(
+                balance_q_df, balance_labels, quarterly=True, max_cols=4)
+            _, cashflow_q_lines = _df_to_lines(
+                cashflow_q_df, cashflow_labels, quarterly=True, max_cols=4)
 
             return Fundamentals(
                 ticker=ticker,
@@ -182,6 +204,10 @@ class YFinanceProvider(Provider):
                 income=income_lines,
                 balance=balance_lines,
                 cashflow=cashflow_lines,
+                periods_q=periods_q,
+                income_q=income_q_lines,
+                balance_q=balance_q_lines,
+                cashflow_q=cashflow_q_lines,
             )
 
     async def fetch_news(self, ticker: str, max_items: int = 5) -> list[NewsItem]:
