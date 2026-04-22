@@ -1,5 +1,6 @@
 """Écran détail : graphe + signaux + trade plan d'un ticker."""
 import plotext as plt
+from rich.text import Text
 from textual.app import ComposeResult
 from textual.binding import Binding
 from textual.containers import Horizontal, VerticalScroll
@@ -9,14 +10,15 @@ from textual.widgets import Footer, Header, Static
 from market_pulse.engine.scanner import Opportunity
 
 
-def _render_price_chart(opp: Opportunity, width: int = 68, height: int = 14) -> str:
-    """Trace le prix de clôture sur l'historique disponible."""
+def _render_price_chart(opp: Opportunity, width: int = 70, height: int = 16) -> Text:
+    """Trace le prix de clôture sur l'historique disponible.
+    Retourne un rich.Text (ANSI→Rich markup) pour que Textual le rende proprement.
+    """
     plt.clf()
     plt.theme("pro")
     plt.plotsize(width, height)
     if not opp.price_history:
-        plt.text("no price history", 0.5, 0.5)
-        return plt.build()
+        return Text("no price history")
     xs = list(range(len(opp.price_history)))
     closes = [p[1] for p in opp.price_history]
     plt.plot(xs, closes, marker="braille")
@@ -26,10 +28,10 @@ def _render_price_chart(opp: Opportunity, width: int = 68, height: int = 14) -> 
     plt.xticks([0, len(xs) - 1],
                [opp.price_history[0][0].isoformat(),
                 opp.price_history[-1][0].isoformat()])
-    return plt.build()
+    return Text.from_ansi(plt.build())
 
 
-def _format_score_bar(score: float, width: int = 10) -> str:
+def _format_score_bar(score: float, width: int = 8) -> str:
     blocks = "▏▎▍▌▋▊▉█"
     score = max(0.0, min(100.0, score))
     full = int(score / 100 * width)
@@ -38,13 +40,6 @@ def _format_score_bar(score: float, width: int = 10) -> str:
     if full < width and part > 0:
         out += blocks[part - 1]
     return out.ljust(width)
-
-
-def _dotted_row(label: str, value: str, total_width: int = 40) -> str:
-    """'RSI(14) ........ 28' style."""
-    label = f" · {label}"
-    dots_len = max(3, total_width - len(label) - len(value) - 1)
-    return f"{label} {'.' * dots_len} {value}"
 
 
 class DetailScreen(Screen):
@@ -77,11 +72,15 @@ class DetailScreen(Screen):
                 f"  ·  {len(o.price_history)}d history")
 
     def _signals_text(self) -> str:
+        """Une ligne par signal : `NAME ........... SCORE bar`.
+        Volontairement compact pour tenir dans le panneau de droite."""
         lines = ["SIGNALS"]
         for name, score, metadata in self.opp.signal_details:
-            val_str = _format_metadata(metadata)
-            bar = _format_score_bar(score, width=8)
-            lines.append(f" · {name:<26} {val_str:>10}  {bar}  {score:5.1f}")
+            bar = _format_score_bar(score, width=6)
+            lines.append(f" · {name:<24} {score:5.1f}  {bar}")
+            meta_str = _format_metadata(metadata)
+            if meta_str:
+                lines.append(f"     {meta_str}")
         return "\n".join(lines)
 
     def _trade_plan_text(self) -> str:
@@ -99,19 +98,20 @@ class DetailScreen(Screen):
 
 
 def _format_metadata(metadata: dict) -> str:
-    """Extrait la valeur la plus parlante d'un metadata dict pour affichage court."""
+    """Extrait la valeur la plus parlante du metadata pour une ligne d'explication."""
     if metadata.get("skipped"):
-        return "skipped"
+        return "(no data)"
     if "rsi" in metadata:
-        return f"{metadata['rsi']:.1f}"
+        return f"RSI {metadata['rsi']:.1f}"
     if "hist" in metadata:
-        return f"{metadata['hist']:+.3f}"
+        return f"hist {metadata['hist']:+.3f}"
     if "width_percentile" in metadata:
-        return f"pct {metadata['width_percentile']:.0f}"
+        bo = "breakout" if metadata.get("breakout") else "no breakout"
+        return f"width pct {metadata['width_percentile']:.0f}, {bo}"
     if "ma5_minus_ma20" in metadata:
-        return f"{metadata['ma5_minus_ma20']:+.2f}"
+        return f"MA5-MA20 {metadata['ma5_minus_ma20']:+.2f}"
     if "volume_ratio" in metadata:
-        return f"{metadata['volume_ratio']:.2f}x"
+        return f"vol ratio {metadata['volume_ratio']:.2f}x"
     if "excess_return_5d" in metadata:
-        return f"{metadata['excess_return_5d']*100:+.1f}%"
-    return "-"
+        return f"excess {metadata['excess_return_5d']*100:+.1f}%"
+    return ""
