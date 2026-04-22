@@ -57,14 +57,69 @@ class YFinanceProvider(Provider):
     async def fetch_meta(self, ticker: str) -> TickerMeta | None:
         async with self._sem:
             loop = asyncio.get_running_loop()
+
+            def _fetch_info_and_cal():
+                t = yf.Ticker(ticker)
+                info = t.info
+                # calendar : dict avec "Earnings Date" (liste de 1 ou 2 timestamps),
+                # "Earnings Average", etc.
+                try:
+                    cal = t.calendar or {}
+                except Exception:
+                    cal = {}
+                # earnings_dates : DataFrame des dates passées + futures
+                try:
+                    ed = t.earnings_dates
+                except Exception:
+                    ed = None
+                return info, cal, ed
+
             try:
-                info = await loop.run_in_executor(
-                    None, lambda: yf.Ticker(ticker).info
+                info, cal, earnings_df = await loop.run_in_executor(
+                    None, _fetch_info_and_cal
                 )
             except Exception:
                 return None
             if not info:
                 return None
+
+            # Extraction dates d'earnings (past + next)
+            from datetime import datetime, timezone
+            import pandas as pd
+            last_date: str | None = None
+            next_date: str | None = None
+            try:
+                if earnings_df is not None and not earnings_df.empty:
+                    # earnings_df index = pd.Timestamp, en ordre décroissant (futures en haut)
+                    now = datetime.now(timezone.utc)
+                    past = [idx for idx in earnings_df.index
+                            if idx.to_pydatetime() < now]
+                    future = [idx for idx in earnings_df.index
+                              if idx.to_pydatetime() >= now]
+                    if past:
+                        last_date = max(past).date().isoformat()
+                    if future:
+                        next_date = min(future).date().isoformat()
+                # Fallback : calendar dict (classe selon date passée ou future)
+                if cal:
+                    raw = cal.get("Earnings Date")
+                    if isinstance(raw, list) and raw:
+                        first = raw[0]
+                        if hasattr(first, "isoformat"):
+                            from datetime import date as _date
+                            ds = first.isoformat()[:10]
+                            try:
+                                d = _date.fromisoformat(ds)
+                                today = _date.today()
+                                if d >= today and next_date is None:
+                                    next_date = ds
+                                elif d < today and last_date is None:
+                                    last_date = ds
+                            except Exception:
+                                if next_date is None:
+                                    next_date = ds
+            except Exception:
+                pass
 
             def f(key: str) -> float | None:
                 v = info.get(key)
@@ -112,6 +167,8 @@ class YFinanceProvider(Provider):
                 recommendation=str(info.get("recommendationKey") or ""),
                 target_mean_price=f("targetMeanPrice"),
                 number_analysts=i("numberOfAnalystOpinions"),
+                last_earnings_date=last_date,
+                next_earnings_date=next_date,
             )
 
     async def fetch_fundamentals(self, ticker: str) -> Fundamentals | None:

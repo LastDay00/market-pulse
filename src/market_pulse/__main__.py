@@ -3,7 +3,7 @@ import asyncio
 import sys
 import time
 
-from market_pulse.config import CACHE_DB, ensure_app_dir
+from market_pulse.config import CACHE_DB, UserSettings, ensure_app_dir
 from market_pulse.data.providers.yfinance_provider import YFinanceProvider
 from market_pulse.engine.scanner import scan
 from market_pulse.ui.app import MarketPulseApp
@@ -11,13 +11,13 @@ from market_pulse.universe.loaders import load_universe
 
 RESCAN_RETURN_CODE = 42
 
-# Provider partagé entre le scan et l'UI (pour les chargements à la demande dans le détail)
+# Provider partagé entre scan et UI (pour chargement on-demand dans le détail)
 _LAST_PROVIDER: "YFinanceProvider | None" = None
 
 
-async def _do_scan(force_refresh: bool = False):
+async def _do_scan(force_refresh: bool = False, settings: UserSettings | None = None):
     ensure_app_dir()
-    # Univers combiné : tous les indices configurés dans AVAILABLE_INDICES
+    settings = settings or UserSettings.load()
     names = load_universe()
     tickers = sorted(names.keys())
     provider = YFinanceProvider(max_concurrency=10)
@@ -25,10 +25,14 @@ async def _do_scan(force_refresh: bool = False):
     _LAST_PROVIDER = provider
 
     mode = "force refresh (cache bypass)" if force_refresh else "cache-aware"
-    print(f"· scanning {len(tickers)} tickers across 7 indices (horizon 1W, {mode}) ...")
+    print(f"· scanning {len(tickers)} tickers "
+          f"(horizon {settings.horizon.upper()}, "
+          f"R/R ≥ {settings.min_rr}, "
+          f"{mode}) ...")
     t0 = time.time()
 
     last_print = [0.0]
+
     def on_progress(done: int, total: int, ticker: str) -> None:
         now = time.time()
         if now - last_print[0] > 0.5 or done == total:
@@ -42,10 +46,10 @@ async def _do_scan(force_refresh: bool = False):
 
     opps = await scan(
         tickers=tickers,
-        horizon="1w",
+        horizon=settings.horizon,
         provider=provider,
         cache_path=CACHE_DB,
-        min_rr=2.0,
+        min_rr=settings.min_rr,
         names=names,
         force_refresh=force_refresh,
         progress_callback=on_progress,
@@ -56,16 +60,19 @@ async def _do_scan(force_refresh: bool = False):
 
 
 def main() -> int:
-    """Boucle scan → UI. Sur return_code=42, force-refresh et relance."""
+    """Boucle scan → UI. Les changements de settings dans la palette
+    déclenchent un exit(42) qui relance le scan avec les nouveaux params."""
     force_refresh = False
     try:
         while True:
-            opps = asyncio.run(_do_scan(force_refresh=force_refresh))
-            app = MarketPulseApp(opps, provider=_LAST_PROVIDER)
+            settings = UserSettings.load()
+            opps = asyncio.run(_do_scan(force_refresh=force_refresh,
+                                         settings=settings))
+            app = MarketPulseApp(opps, provider=_LAST_PROVIDER,
+                                 settings=settings)
             app.run()
             if app.return_code != RESCAN_RETURN_CODE:
                 return 0
-            # Relance avec force_refresh=True : R signifie "je veux des données fraîches"
             force_refresh = True
     except KeyboardInterrupt:
         print("\n· interrupted")

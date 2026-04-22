@@ -302,7 +302,8 @@ class DetailScreen(Screen):
         """Worker Textual : enrichit l'Opportunity puis rerend les panneaux."""
         provider = self.app.provider
         try:
-            await enrich_opportunity(self.opp, provider)
+            blend = getattr(self.app.settings, "blend_fundamentals", True)
+            await enrich_opportunity(self.opp, provider, blend_fundamentals=blend)
         except Exception as e:
             self.notify(f"Erreur chargement : {e}", severity="error")
         finally:
@@ -329,8 +330,13 @@ class DetailScreen(Screen):
         if not self.opp.meta:
             return f"{len(self.opp.recent_bars)} jours d'historique"
         m = self.opp.meta
-        return (f"{m.sector}  ·  {m.industry}  ·  "
-                f"{m.currency}  ·  {len(self.opp.recent_bars)} jours d'historique")
+        parts = [m.sector, m.industry, m.currency,
+                 f"{len(self.opp.recent_bars)} jours d'historique"]
+        if m.last_earnings_date:
+            parts.append(f"dernière pub. {m.last_earnings_date}")
+        if m.next_earnings_date:
+            parts.append(f"prochaine {m.next_earnings_date}")
+        return "  ·  ".join(parts)
 
     def _signals_text(self) -> str:
         lines = ["SIGNAUX"]

@@ -10,9 +10,18 @@ import pandas as pd
 
 from market_pulse.engine.indicators import atr
 
-ATR_MULTIPLIERS = {"1d": 1.5, "1w": 3.0, "1m": 6.0, "1y": 12.0}
-LOOKBACK_RESISTANCE_DAYS = {"1d": 30, "1w": 120, "1m": 252, "1y": 504}
-LOOKBACK_SUPPORT_DAYS = {"1d": 20, "1w": 60, "1m": 120, "1y": 252}
+ATR_MULTIPLIERS = {
+    "1d": 1.5, "1w": 3.0, "1m": 6.0, "1y": 12.0,
+    "3y": 20.0, "5y": 30.0, "10y": 50.0,
+}
+LOOKBACK_RESISTANCE_DAYS = {
+    "1d": 30, "1w": 120, "1m": 252, "1y": 504,
+    "3y": 756, "5y": 1260, "10y": 2520,
+}
+LOOKBACK_SUPPORT_DAYS = {
+    "1d": 20, "1w": 60, "1m": 120, "1y": 252,
+    "3y": 500, "5y": 800, "10y": 1500,
+}
 
 
 @dataclass(frozen=True)

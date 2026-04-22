@@ -20,7 +20,9 @@ from market_pulse.engine.signals.weekly_bear import (
     BollingerSqueezeBreakdownBear, MA5BelowMA20Bear, MACDBearCrossover,
     RelativeWeaknessBear, RSIOverboughtBear, VolumeConfirmationBear,
 )
-from market_pulse.engine.trade_plan import TradePlan, compute_trade_plan
+from market_pulse.engine.trade_plan import (
+    ATR_MULTIPLIERS, TradePlan, compute_trade_plan,
+)
 
 HORIZON_SIGNALS_1W_LONG = [
     RSIDivergence(),
@@ -142,13 +144,10 @@ def compute_fundamental_score(meta: TickerMeta | None) -> float | None:
     return sum(valid) / len(valid)
 
 
-async def enrich_opportunity(opp: Opportunity, provider: Provider) -> None:
-    """Fetch meta + news + fundamentals, traduit les news, puis blend le score
-    technique avec un score fondamental (80 % technique + 20 % fondamental).
-
-    Pour une direction SHORT, le score fondamental est INVERSÉ : une mauvaise
-    boîte est plus attractive à shorter, donc un fondamental faible augmente
-    la note de short.
+async def enrich_opportunity(opp: Opportunity, provider: Provider,
+                              blend_fundamentals: bool = True) -> None:
+    """Fetch meta + news + fundamentals, traduit les news, puis blend
+    optionnellement le score technique avec un score fondamental (80/20).
     """
     meta, news, fundamentals = await asyncio.gather(
         provider.fetch_meta(opp.ticker),
@@ -166,10 +165,12 @@ async def enrich_opportunity(opp: Opportunity, provider: Provider) -> None:
         ]
     opp.news = news
 
+    if not blend_fundamentals:
+        return
+
     # Score fondamental + blend avec le score technique
     fund_score = compute_fundamental_score(meta)
     if fund_score is not None:
-        # Inversion pour un short : fundamentaux faibles = bon à shorter
         effective_fund = fund_score
         if opp.trade_plan.direction == "short":
             effective_fund = 100.0 - fund_score
@@ -250,8 +251,8 @@ async def scan(
     force_refresh: bool = False,
     progress_callback=None,
 ) -> list[Opportunity]:
-    if horizon != "1w":
-        raise NotImplementedError("Phase 1 supports only horizon='1w'")
+    if horizon not in ATR_MULTIPLIERS:
+        raise ValueError(f"Horizon non supporté : {horizon}")
 
     cache = BarCache(cache_path)
     counter = {"done": 0, "total": len(tickers)}
@@ -293,7 +294,16 @@ async def scan(
     # Enrichissement meta + news pour les top N seulement (coût réseau contenu)
     top = opps[:enrich_top_n]
 
-    await asyncio.gather(*(enrich_opportunity(o, provider) for o in top))
+    # Blend fundamentals selon settings user
+    try:
+        from market_pulse.config import UserSettings
+        _settings = UserSettings.load()
+        _blend = _settings.blend_fundamentals
+    except Exception:
+        _blend = True
+    await asyncio.gather(
+        *(enrich_opportunity(o, provider, blend_fundamentals=_blend) for o in top)
+    )
 
     cache.close()
     return opps

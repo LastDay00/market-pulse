@@ -45,6 +45,9 @@ class TickerMeta:
     recommendation: str | None = None
     target_mean_price: float | None = None
     number_analysts: int | None = None
+    # Earnings
+    last_earnings_date: str | None = None   # ISO date, dernière publication
+    next_earnings_date: str | None = None   # ISO date, prochaine publication (estimée)
 
 
 @dataclass(frozen=True)
