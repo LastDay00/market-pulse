@@ -1,204 +1,197 @@
-"""Chart lisse style Bloomberg : area chart avec fill Unicode blocks + volume.
+"""Vrai chart pixel-based rendu via matplotlib + rich-pixels.
 
-Plutôt que plotext (qui utilise du braille et donne un aspect "pointillé"),
-on rend nous-mêmes le chart avec des Unicode blocks ▁▂▃▄▅▆▇█ pour un
-remplissage lisse. 8 niveaux de précision sub-cellulaire = courbe smooth.
+matplotlib génère une vraie image PNG (anti-aliasing, courbes smooth, lignes
+fines nettes). rich-pixels la convertit en Unicode halfblocks colorisés pour
+un affichage dans Textual. Résultat : qualité bien supérieure aux chars
+ASCII/braille.
 """
 from __future__ import annotations
 
+from io import BytesIO
 from statistics import mean
 
+import matplotlib
+matplotlib.use("Agg")  # backend sans écran, indispensable en terminal
+import matplotlib.pyplot as plt
+from matplotlib.figure import Figure
+from PIL import Image
+from rich.console import Group
 from rich.text import Text
+from rich_pixels import Pixels
 
 from market_pulse.data.models import Bar
 
-SAUGE_RGB = (127, 176, 105)
-TERRA_RGB = (201, 112, 100)
-AMBRE_RGB = (232, 180, 93)
-SMOKE_RGB = (107, 140, 174)
-OFF_WHITE_RGB = (232, 230, 227)
-GRID_RGB = (60, 60, 66)
-MUTED_RGB = (138, 134, 128)
+SAUGE = "#7FB069"       # vert sauge Nothing
+TERRA = "#C97064"       # terre cuite
+AMBRE = "#E8B45D"
+SMOKE_BLUE = "#6B8CAE"
+OFF_WHITE = "#E8E6E3"
+BG = "#0A0A0B"
+MUTED = "#8A8680"
 
 
-def _rgb(c: tuple[int, int, int]) -> str:
-    return f"rgb({c[0]},{c[1]},{c[2]})"
+def _stats_header(bars: list[Bar]) -> Text:
+    """Ligne de stats en en-tête (Dernier / Haut / Bas / Moyenne)."""
+    closes = [b.close for b in bars]
+    highs = [b.high for b in bars]
+    lows = [b.low for b in bars]
+    last = closes[-1]
+    hi_val = max(highs)
+    hi_date = bars[highs.index(hi_val)].date.isoformat()
+    lo_val = min(lows)
+    lo_date = bars[lows.index(lo_val)].date.isoformat()
+    avg_val = mean(closes)
+
+    text = Text()
+    text.append(" Dernier ", style=MUTED)
+    text.append(f"{last:>8.2f}", style=OFF_WHITE)
+    text.append("     ▲ Haut ", style=MUTED)
+    text.append(f"{hi_val:>8.2f}", style=SAUGE)
+    text.append(f" ({hi_date})", style=MUTED)
+    text.append("     ▼ Bas ", style=MUTED)
+    text.append(f"{lo_val:>8.2f}", style=TERRA)
+    text.append(f" ({lo_date})", style=MUTED)
+    text.append("     Moyenne ", style=MUTED)
+    text.append(f"{avg_val:>8.2f}", style=AMBRE)
+    text.append("\n")
+    return text
 
 
-_BLOCKS_UP = [" ", "▁", "▂", "▃", "▄", "▅", "▆", "▇", "█"]
+def _render_matplotlib_png(
+    bars: list[Bar], trade_plan, width_px: int, height_px: int
+) -> Image.Image:
+    """Trace le chart avec matplotlib et retourne une PIL Image."""
+    closes = [b.close for b in bars]
+    xs = list(range(len(bars)))
+
+    fig = Figure(figsize=(width_px / 100, height_px / 100), dpi=100,
+                 facecolor=BG)
+    ax = fig.add_subplot(111)
+    ax.set_facecolor(BG)
+
+    # Couleur selon tendance
+    trend_up = closes[-1] >= closes[0]
+    line_color = SAUGE if trend_up else TERRA
+
+    # Ligne + fill sous la courbe
+    ax.plot(xs, closes, color=line_color, linewidth=1.2, antialiased=True)
+    ax.fill_between(xs, min(closes) - 1, closes,
+                    color=line_color, alpha=0.25, linewidth=0)
+
+    # Lignes de référence (entry/TP/SL)
+    if trade_plan is not None:
+        ax.axhline(trade_plan.entry, color=OFF_WHITE, linewidth=0.8,
+                   linestyle="--", alpha=0.9)
+        ax.axhline(trade_plan.target, color=SAUGE, linewidth=0.8,
+                   linestyle="--", alpha=0.9)
+        ax.axhline(trade_plan.stop, color=TERRA, linewidth=0.8,
+                   linestyle="--", alpha=0.9)
+
+    # Style : supprimer cadre, ticks, labels
+    for spine in ax.spines.values():
+        spine.set_visible(False)
+    ax.tick_params(left=False, bottom=False, labelleft=False, labelbottom=False)
+    ax.margins(x=0, y=0.05)
+
+    fig.subplots_adjust(left=0, right=1, top=1, bottom=0)
+
+    buf = BytesIO()
+    fig.savefig(buf, format="png", facecolor=BG, edgecolor="none",
+                bbox_inches="tight", pad_inches=0)
+    plt.close(fig)
+    buf.seek(0)
+    return Image.open(buf).convert("RGB")
+
+
+def _render_volume_png(bars: list[Bar], width_px: int, height_px: int) -> Image.Image:
+    """Histogramme volume via matplotlib."""
+    vols = [b.volume for b in bars]
+    xs = list(range(len(bars)))
+
+    fig = Figure(figsize=(width_px / 100, height_px / 100), dpi=100,
+                 facecolor=BG)
+    ax = fig.add_subplot(111)
+    ax.set_facecolor(BG)
+    colors = [SAUGE if b.close >= b.open else TERRA for b in bars]
+    ax.bar(xs, vols, color=colors, width=1.0, linewidth=0, alpha=0.8)
+
+    for spine in ax.spines.values():
+        spine.set_visible(False)
+    ax.tick_params(left=False, bottom=False, labelleft=False, labelbottom=False)
+    ax.margins(x=0, y=0.02)
+
+    fig.subplots_adjust(left=0, right=1, top=1, bottom=0)
+    buf = BytesIO()
+    fig.savefig(buf, format="png", facecolor=BG, edgecolor="none",
+                bbox_inches="tight", pad_inches=0)
+    plt.close(fig)
+    buf.seek(0)
+    return Image.open(buf).convert("RGB")
 
 
 def render_candlestick_chart(
     bars: list[Bar],
     trade_plan=None,
     width: int = 70,
-    chart_height: int = 16,
+    chart_height: int = 14,
     volume_height: int = 0,
-) -> Text:
-    """Rend un area chart lisse + volume + stats header.
+) -> Group:
+    """Rend le chart complet (stats + graph + volume) comme un Rich renderable.
 
-    Layout vertical :
-      1. Ligne de stats (Dernier / Haut / Bas / Moyenne)
-      2. Area chart (fill Unicode blocks, axe Y à gauche)
-      3. Axe X avec dates
-      4. Volume bars (Unicode blocks)
+    Utilise matplotlib pour la vraie image puis rich-pixels pour la convertir
+    en Unicode halfblocks colorisés pour l'affichage Textual.
     """
-    text = Text()
     if not bars:
-        text.append("no data", style=_rgb(MUTED_RGB))
-        return text
+        return Group(Text("no data", style=MUTED))
 
-    y_label_w = 7
-    separator = 1
-    chart_w = max(10, width - y_label_w - separator)
-    n = min(len(bars), chart_w)
-    visible = bars[-n:]
+    # 1 cellule terminal ≈ 1 pixel x 2 pixels avec halfblock
+    # Pour un chart de `width` x `chart_height` cellules → image de width x 2*chart_height px
+    img_w = max(40, width)
+    img_h = max(20, chart_height * 2)
+    vol_img_h = max(6, 3 * 2)
 
-    closes = [b.close for b in visible]
-    highs = [b.high for b in visible]
-    lows = [b.low for b in visible]
-    vols = [b.volume for b in visible]
+    # Date labels début / fin
+    start_lbl = bars[0].date.isoformat()
+    end_lbl = bars[-1].date.isoformat()
 
-    last = closes[-1]
-    hi_val = max(highs)
-    hi_idx = highs.index(hi_val)
-    hi_date = visible[hi_idx].date.isoformat()
-    lo_val = min(lows)
-    lo_idx = lows.index(lo_val)
-    lo_date = visible[lo_idx].date.isoformat()
-    avg_val = mean(closes)
+    # Génère images et convertit en Rich Pixels
+    chart_img = _render_matplotlib_png(bars, trade_plan, img_w * 10, img_h * 10)
+    chart_img = chart_img.resize((img_w, img_h), Image.LANCZOS)
+    chart_pixels = Pixels.from_image(chart_img)
 
-    muted = _rgb(MUTED_RGB)
-    grid_style = _rgb(GRID_RGB)
+    vol_img = _render_volume_png(bars, img_w * 10, vol_img_h * 10)
+    vol_img = vol_img.resize((img_w, vol_img_h), Image.LANCZOS)
+    vol_pixels = Pixels.from_image(vol_img)
 
-    # -------- 1) Stats header --------
-    text.append(" Dernier ", style=muted)
-    text.append(f"{last:>8.2f}", style=_rgb(OFF_WHITE_RGB))
-    text.append("     ▲ Haut ", style=muted)
-    text.append(f"{hi_val:>8.2f}", style=_rgb(SAUGE_RGB))
-    text.append(f" ({hi_date})", style=muted)
-    text.append("     ▼ Bas ", style=muted)
-    text.append(f"{lo_val:>8.2f}", style=_rgb(TERRA_RGB))
-    text.append(f" ({lo_date})", style=muted)
-    text.append("     Moyenne ", style=muted)
-    text.append(f"{avg_val:>8.2f}", style=_rgb(AMBRE_RGB))
-    text.append("\n\n")
+    # Légendes
+    dates_line = Text()
+    pad = max(1, img_w - len(start_lbl) - len(end_lbl))
+    dates_line.append(start_lbl, style=MUTED)
+    dates_line.append(" " * pad)
+    dates_line.append(end_lbl, style=MUTED)
 
-    # -------- 2) Area chart --------
-    # Plage de prix (inclut les lignes du trade plan pour qu'elles soient visibles)
-    prices = list(closes)
-    if trade_plan is not None:
-        prices.extend([trade_plan.entry, trade_plan.target, trade_plan.stop])
-    chart_hi = max(prices)
-    chart_lo = min(prices)
-    rng = chart_hi - chart_lo if chart_hi > chart_lo else 1.0
-
-    # 8 niveaux de précision sub-cellulaire par rangée
-    total_levels = chart_height * 8
-    col_levels = [
-        int((c - chart_lo) / rng * total_levels + 0.5) for c in closes
-    ]
-
-    # Positions des lignes de référence (row index dans le chart)
-    ref_rows: dict[int, tuple[int, int, int]] = {}
-    if trade_plan is not None:
-        for price, rgb_color in (
-            (trade_plan.entry, OFF_WHITE_RGB),
-            (trade_plan.target, SAUGE_RGB),
-            (trade_plan.stop, TERRA_RGB),
-        ):
-            row = int((chart_hi - price) / rng * (chart_height - 1) + 0.5)
-            if 0 <= row < chart_height:
-                ref_rows[row] = rgb_color
-
-    trend_up = closes[-1] >= closes[0]
-    line_style = _rgb(SAUGE_RGB if trend_up else TERRA_RGB)
-
-    tick_rows = {0, chart_height // 4, chart_height // 2,
-                 3 * chart_height // 4, chart_height - 1}
-    tick_prices: dict[int, float] = {}
-    for r in tick_rows:
-        ratio = r / (chart_height - 1) if chart_height > 1 else 0
-        tick_prices[r] = chart_hi - ratio * rng
-
-    for r in range(chart_height):
-        # Axe Y
-        if r in tick_rows:
-            text.append(f"{tick_prices[r]:>{y_label_w}.2f}", style=muted)
-            text.append("┤", style=grid_style)
-        else:
-            text.append(" " * y_label_w, style=muted)
-            text.append("│", style=grid_style)
-
-        # Cette rangée couvre les niveaux [row_bottom, row_top)
-        row_top_level = (chart_height - r) * 8
-        row_bot_level = (chart_height - r - 1) * 8
-        ref_color = ref_rows.get(r)
-
-        for i in range(n):
-            col_level = col_levels[i]
-            if col_level >= row_top_level:
-                # Entièrement sous la courbe : bloc plein coloré
-                text.append("█", style=line_style)
-            elif col_level <= row_bot_level:
-                # Entièrement au-dessus de la courbe : espace vide (ou ref line)
-                if ref_color:
-                    text.append("─", style=_rgb(ref_color))
-                else:
-                    text.append(" ")
-            else:
-                # Partiel dans cette rangée : block fractionnel
-                frac = col_level - row_bot_level  # 1..7
-                text.append(_BLOCKS_UP[frac], style=line_style)
-        text.append("\n")
-
-    # -------- 3) Axe X + dates --------
-    text.append(" " * y_label_w, style=muted)
-    text.append("└" + "─" * n + "\n", style=grid_style)
-
-    start_lbl = visible[0].date.isoformat()
-    end_lbl = visible[-1].date.isoformat()
-    pad = max(1, n - len(start_lbl) - len(end_lbl))
-    text.append(" " * (y_label_w + 1))
-    text.append(start_lbl, style=muted)
-    text.append(" " * pad)
-    text.append(end_lbl, style=muted)
-    text.append("\n\n")
-
-    # -------- 4) Volume bars --------
-    vol_height = 3
-    max_vol = max(vols) if vols else 1
-    vol_levels_total = vol_height * 8
-    vol_levels = [
-        int(v / max_vol * vol_levels_total + 0.5) if max_vol > 0 else 0
-        for v in vols
-    ]
-
-    vol_style = muted
-    for r in range(vol_height):
-        text.append(" " * y_label_w, style=muted)
-        text.append("│", style=grid_style)
-        row_top = (vol_height - r) * 8
-        row_bot = (vol_height - r - 1) * 8
-        for i in range(n):
-            lvl = vol_levels[i]
-            if lvl >= row_top:
-                text.append("█", style=vol_style)
-            elif lvl <= row_bot:
-                text.append(" ")
-            else:
-                text.append(_BLOCKS_UP[lvl - row_bot], style=vol_style)
-        text.append("\n")
-
-    # Légende volume
-    text.append(" " * y_label_w, style=muted)
-    text.append("└" + "─" * n + "\n", style=grid_style)
-    text.append(" VOL  max ", style=muted)
+    legend = Text()
+    max_vol = max(b.volume for b in bars)
+    legend.append(" VOL  max ", style=MUTED)
     if max_vol >= 1e9:
-        text.append(f"{max_vol/1e9:.2f} Md", style=muted)
+        legend.append(f"{max_vol/1e9:.2f} Md", style=MUTED)
     elif max_vol >= 1e6:
-        text.append(f"{max_vol/1e6:.2f} M", style=muted)
+        legend.append(f"{max_vol/1e6:.2f} M", style=MUTED)
     else:
-        text.append(f"{max_vol:,.0f}".replace(",", " "), style=muted)
+        legend.append(f"{max_vol:,.0f}".replace(",", " "), style=MUTED)
 
-    return text
+    legend.append("     · Lignes : ", style=MUTED)
+    legend.append("entry ", style=OFF_WHITE)
+    legend.append("·  ", style=MUTED)
+    legend.append("TP ", style=SAUGE)
+    legend.append("·  ", style=MUTED)
+    legend.append("SL", style=TERRA)
+
+    return Group(
+        _stats_header(bars),
+        chart_pixels,
+        dates_line,
+        Text(""),  # spacer
+        vol_pixels,
+        legend,
+    )
