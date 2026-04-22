@@ -1,6 +1,6 @@
 """Orchestration du scan : univers → signals → score → trade plan."""
 import asyncio
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import date, timedelta
 from pathlib import Path
 
@@ -8,7 +8,7 @@ import pandas as pd
 
 from market_pulse.data.cache import BarCache
 from market_pulse.data.models import Bar
-from market_pulse.data.providers.base import Provider
+from market_pulse.data.providers.base import NewsItem, Provider, TickerMeta
 from market_pulse.engine.scoring import aggregate_score
 from market_pulse.engine.signals.weekly import (
     BollingerSqueezeBreakout, MA5AboveMA20, MACDCrossover,
@@ -26,14 +26,16 @@ HORIZON_SIGNALS_1W = [
 ]
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=False)
 class Opportunity:
     ticker: str
     horizon: str
     score: float
     trade_plan: TradePlan
     signal_details: list[tuple[str, float, dict]]
-    recent_bars: list[Bar]  # derniers ~90 jours OHLCV pour le chart candlestick
+    recent_bars: list[Bar]  # 252 derniers jours OHLCV (chart + stats)
+    meta: TickerMeta | None = None
+    news: list[NewsItem] = field(default_factory=list)
 
 
 def _bars_to_df(bars: list[Bar]) -> pd.DataFrame:
@@ -79,6 +81,7 @@ async def scan(
     cache_path: Path,
     min_rr: float = 2.0,
     lookback_days: int = 365,
+    enrich_top_n: int = 20,
 ) -> list[Opportunity]:
     if horizon != "1w":
         raise NotImplementedError("Phase 1 supports only horizon='1w'")
@@ -95,7 +98,6 @@ async def scan(
         plan = compute_trade_plan(df, horizon=horizon)
         if plan.risk_reward < min_rr:
             return None
-        # Bars récentes pour chart candlestick + stats (1 an max)
         recent_bars = bars[-252:]
         return Opportunity(
             ticker=ticker, horizon=horizon, score=score,
@@ -106,5 +108,19 @@ async def scan(
     results = await asyncio.gather(*(_process(t) for t in tickers))
     opps = [o for o in results if o is not None]
     opps.sort(key=lambda o: o.score, reverse=True)
+
+    # Enrichissement meta + news pour les top N seulement (coût réseau contenu)
+    top = opps[:enrich_top_n]
+
+    async def _enrich(opp: Opportunity) -> None:
+        meta, news = await asyncio.gather(
+            provider.fetch_meta(opp.ticker),
+            provider.fetch_news(opp.ticker, max_items=5),
+        )
+        opp.meta = meta
+        opp.news = news
+
+    await asyncio.gather(*(_enrich(o) for o in top))
+
     cache.close()
     return opps

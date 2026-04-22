@@ -1,7 +1,6 @@
 """Écran détail : chart candlestick + signaux + trade plan + stats."""
 import math
 
-import plotext as plt
 from rich.text import Text
 from textual.app import ComposeResult
 from textual.binding import Binding
@@ -11,38 +10,22 @@ from textual.widgets import Footer, Header, Static
 
 from market_pulse.data.models import Bar
 from market_pulse.engine.scanner import Opportunity
+from market_pulse.ui.widgets.candle_chart import render_candlestick_chart
 
-SAUGE = (127, 176, 105)       # Nothing vert sauge
-TERRA = (201, 112, 100)       # Nothing terre cuite
-AMBRE = (232, 180, 93)        # Nothing ambre
-SMOKE_BLUE = (107, 140, 174)  # Nothing bleu fumée
+SAUGE = (127, 176, 105)
+TERRA = (201, 112, 100)
+AMBRE = (232, 180, 93)
+SMOKE_BLUE = (107, 140, 174)
 OFF_WHITE = (232, 230, 227)
 
 
-def _render_candles(opp: Opportunity, width: int = 70, height: int = 18) -> Text:
-    """Candlestick des 60 derniers jours avec couleurs Nothing douces."""
-    plt.clf()
-    plt.theme("pro")
-    plt.plotsize(width, height)
-    plt.date_form("Y-m-d")
-    if not opp.recent_bars:
-        return Text("no price history")
-
-    bars = opp.recent_bars[-60:]  # 60 dernières bougies pour que chacune ait de l'espace
-    dates = [b.date.strftime("%Y-%m-%d") for b in bars]
-    data = {
-        "Open":  [b.open for b in bars],
-        "High":  [b.high for b in bars],
-        "Low":   [b.low for b in bars],
-        "Close": [b.close for b in bars],
-    }
-    plt.candlestick(dates, data, colors=[SAUGE, TERRA])
-
-    plt.hline(opp.trade_plan.entry, color=OFF_WHITE)
-    plt.hline(opp.trade_plan.target, color=SAUGE)
-    plt.hline(opp.trade_plan.stop, color=TERRA)
-
-    return Text.from_ansi(plt.build())
+def _render_candles(opp: Opportunity, width: int = 80, chart_height: int = 15) -> Text:
+    """Custom candlestick chart via Rich Text (plus de contrôle que plotext)."""
+    bars = opp.recent_bars[-(width - 9):] if opp.recent_bars else []
+    return render_candlestick_chart(
+        bars=bars, trade_plan=opp.trade_plan,
+        width=width, chart_height=chart_height, volume_height=3,
+    )
 
 
 def _pct_change(bars: list[Bar], back_days: int) -> float | None:
@@ -118,6 +101,7 @@ class DetailScreen(Screen):
         yield Header(show_clock=True)
         with VerticalScroll(id="detail-scroll"):
             yield Static(self._title_line(), classes="highlight-amber", id="title")
+            yield Static(self._subtitle_line(), id="subtitle")
             with Horizontal(id="top-panels"):
                 yield Static(_render_candles(self.opp),
                              id="chart-panel", classes="panel")
@@ -128,13 +112,24 @@ class DetailScreen(Screen):
                              id="stats-panel", classes="panel")
                 yield Static(self._trade_plan_text(),
                              id="plan-panel", classes="panel")
+            yield Static(self._news_text(),
+                         id="news-panel", classes="panel")
         yield Footer()
 
     def _title_line(self) -> str:
         o = self.opp
-        return (f"{o.ticker}  ·  SCORE {o.score:.1f} / 100"
-                f"  ·  horizon {o.horizon.upper()}"
-                f"  ·  {len(o.recent_bars)}d history")
+        name = o.meta.long_name if o.meta else ""
+        name_part = f"  ·  {name}" if name else ""
+        return (f"{o.ticker}{name_part}"
+                f"  ·  SCORE {o.score:.1f} / 100"
+                f"  ·  horizon {o.horizon.upper()}")
+
+    def _subtitle_line(self) -> str:
+        if not self.opp.meta:
+            return f"{len(self.opp.recent_bars)}d history"
+        m = self.opp.meta
+        return (f"{m.sector}  ·  {m.industry}  ·  "
+                f"{m.currency}  ·  {len(self.opp.recent_bars)}d history")
 
     def _signals_text(self) -> str:
         lines = ["SIGNALS"]
@@ -177,6 +172,29 @@ class DetailScreen(Screen):
             f" · 52w range      {_fmt_num(lo52)} → {_fmt_num(hi52)}",
             f"   {_pos_bar(pos52)}  pos {pos52:.0f}%",
         ]
+        return "\n".join(lines)
+
+    def _news_text(self) -> str:
+        lines = ["RECENT NEWS"]
+        if not self.opp.news:
+            lines.append(" · no recent news")
+            return "\n".join(lines)
+        from datetime import datetime, timezone
+        now = datetime.now(timezone.utc)
+        for item in self.opp.news[:5]:
+            pub = item.published
+            if pub.tzinfo is None:
+                pub = pub.replace(tzinfo=timezone.utc)
+            delta = now - pub
+            if delta.days >= 1:
+                age = f"{delta.days}d ago"
+            elif delta.seconds >= 3600:
+                age = f"{delta.seconds // 3600}h ago"
+            else:
+                age = f"{max(1, delta.seconds // 60)}m ago"
+            title = item.title[:140]
+            publisher = (item.publisher or "?")[:20]
+            lines.append(f" · [{age:>7}] {publisher:<20} · {title}")
         return "\n".join(lines)
 
     def _trade_plan_text(self) -> str:

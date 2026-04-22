@@ -52,11 +52,16 @@ DataTable > .datatable--cursor {
     color: #E8B45D;
     text-style: bold;
     padding: 0 1;
+}
+
+#subtitle {
+    color: #8A8680;
+    padding: 0 1;
     margin-bottom: 1;
 }
 
 #top-panels {
-    height: 22;
+    height: 24;
     margin-bottom: 1;
 }
 
@@ -89,6 +94,11 @@ DataTable > .datatable--cursor {
 
 #plan-panel {
     width: 48;
+}
+
+#news-panel {
+    height: auto;
+    min-height: 8;
 }
 
 .score-high {
