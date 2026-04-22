@@ -1,10 +1,11 @@
-"""Price chart rendering pour l'écran détail.
+"""Rendu chart style Bloomberg : area chart + volume + stats overlay.
 
-Area chart avec ligne et remplissage, via plotext. Plus lisible qu'un
-candlestick 1-char de large en terminal (les bougies deviennent illisibles).
-Le rendu ANSI de plotext est converti en Rich Text pour Textual.
+Utilise plotext pour la base (line+fill avec marker braille) avec conversion
+ANSI→Rich Text pour intégration Textual propre.
 """
 from __future__ import annotations
+
+from statistics import mean
 
 import plotext as plt
 from rich.text import Text
@@ -14,81 +15,104 @@ from market_pulse.data.models import Bar
 SAUGE_RGB = (127, 176, 105)
 TERRA_RGB = (201, 112, 100)
 AMBRE_RGB = (232, 180, 93)
-SMOKE_RGB = (107, 140, 174)
+SMOKE_RGB = (107, 140, 174)       # bleu fumée Nothing (couleur principale du chart)
 OFF_WHITE_RGB = (232, 230, 227)
+GRID_RGB = (60, 60, 66)
 MUTED_RGB = (138, 134, 128)
+
+
+def _rgb(c: tuple[int, int, int]) -> str:
+    return f"rgb({c[0]},{c[1]},{c[2]})"
 
 
 def render_candlestick_chart(
     bars: list[Bar],
     trade_plan=None,
     width: int = 70,
-    chart_height: int = 16,
-    volume_height: int = 0,  # déprécié : le volume est maintenant rendu séparément
+    chart_height: int = 14,
+    volume_height: int = 0,  # volume intégré ci-dessous, cet arg est ignoré
 ) -> Text:
-    """Rend un area chart (ligne + remplissage sous la courbe) des closes.
+    """Rend un chart style Bloomberg : stats + area chart + volume bars.
 
-    Couleur de la courbe :
-    - sauge si tendance haussière sur la fenêtre (close[-1] ≥ close[0])
-    - terre cuite sinon
-
-    Lignes horizontales tracées pour entry (blanc), TP (sauge), SL (terre cuite).
+    - Stats en en-tête : Dernier, Haut, Bas, Moyenne
+    - Area chart (ligne + remplissage) en bleu fumée
+    - Lignes horizontales entry (blanc), TP (sauge), SL (terre cuite)
+    - Volume bars en-dessous, colorisées vert/rouge selon direction de la bougie
     """
+    text = Text()
     if not bars:
-        return Text("no data", style="dim")
+        text.append("no data", style=_rgb(MUTED_RGB))
+        return text
 
+    # -------- Stats en-tête --------
+    closes = [b.close for b in bars]
+    highs = [b.high for b in bars]
+    lows = [b.low for b in bars]
+    last = closes[-1]
+    hi_val = max(highs)
+    hi_date = bars[highs.index(hi_val)].date.isoformat()
+    lo_val = min(lows)
+    lo_date = bars[lows.index(lo_val)].date.isoformat()
+    avg_val = mean(closes)
+
+    muted = _rgb(MUTED_RGB)
+    text.append(f" Dernier ", style=muted)
+    text.append(f"{last:>8.2f}", style=_rgb(OFF_WHITE_RGB))
+    text.append(f"     ▲ Haut ", style=muted)
+    text.append(f"{hi_val:>8.2f}", style=_rgb(SAUGE_RGB))
+    text.append(f" ({hi_date})", style=muted)
+    text.append(f"     ▼ Bas ", style=muted)
+    text.append(f"{lo_val:>8.2f}", style=_rgb(TERRA_RGB))
+    text.append(f" ({lo_date})", style=muted)
+    text.append(f"     Moyenne ", style=muted)
+    text.append(f"{avg_val:>8.2f}", style=_rgb(AMBRE_RGB))
+    text.append("\n\n")
+
+    # -------- Area chart principal --------
     plt.clf()
     plt.theme("pro")
     plt.plotsize(width, chart_height)
     plt.date_form("Y-m-d")
 
     dates = [b.date.strftime("%Y-%m-%d") for b in bars]
-    closes = [b.close for b in bars]
 
-    trend_up = closes[-1] >= closes[0]
-    line_color = SAUGE_RGB if trend_up else TERRA_RGB
+    # Ligne de prix avec fill sous la courbe, en bleu fumée (couleur Bloomberg-like)
+    plt.plot(dates, closes, color=SMOKE_RGB, fillx=True, marker="braille")
 
-    # Ligne de prix D'ABORD, sans remplissage (le fill masquait les hlines)
-    plt.plot(dates, closes, color=line_color, marker="braille")
-
-    # Lignes de référence PAR-DESSUS : les appels plus tardifs passent devant
-    # dans l'ordre de rendu plotext
+    # Lignes de référence DEVANT (appel après plot)
     if trade_plan is not None:
         plt.hline(trade_plan.entry, color=OFF_WHITE_RGB)
         plt.hline(trade_plan.target, color=SAUGE_RGB)
         plt.hline(trade_plan.stop, color=TERRA_RGB)
 
-    return Text.from_ansi(plt.build())
+    # Grille horizontale en pointillés (Bloomberg feel)
+    plt.grid(True, True)
 
+    text.append(Text.from_ansi(plt.build()))
+    text.append("\n")
 
-def render_volume_chart(
-    bars: list[Bar],
-    width: int = 70,
-    height: int = 5,
-) -> Text:
-    """Rend une sparkline de volumes sous le chart principal."""
-    if not bars:
-        return Text("")
-
+    # -------- Volume bars --------
+    vol_height = 5
     plt.clf()
     plt.theme("pro")
-    plt.plotsize(width, height)
+    plt.plotsize(width, vol_height)
+    plt.date_form("Y-m-d")
 
-    xs = list(range(len(bars)))
+    # Deux passes pour colorer vert/rouge selon direction, mais plotext bar ne
+    # supporte pas 1 couleur par barre → on remplace par 1 seule couleur neutre
+    # (Bloomberg utilise gris monocolore, lisible sans distraction)
     vols = [b.volume for b in bars]
+    plt.bar(dates, vols, color=MUTED_RGB, marker="sd", width=0.9)
+    plt.xticks([], [])  # pas de ticks x (les dates sont déjà dans le chart principal)
 
-    # Colorer rouge/vert selon la direction de la bougie
-    # plotext bar ne supporte pas une couleur par barre, donc on plot 2 fois :
-    # une pour les hausses, une pour les baisses
-    up_x = [i for i, b in enumerate(bars) if b.close >= b.open]
-    up_v = [bars[i].volume for i in up_x]
-    dn_x = [i for i, b in enumerate(bars) if b.close < b.open]
-    dn_v = [bars[i].volume for i in dn_x]
+    text.append(Text.from_ansi(plt.build()))
+    text.append(" VOL  max ", style=muted)
+    max_vol = max(vols)
+    if max_vol >= 1e9:
+        text.append(f"{max_vol/1e9:.2f}Md\n", style=muted)
+    elif max_vol >= 1e6:
+        text.append(f"{max_vol/1e6:.2f}M\n", style=muted)
+    else:
+        text.append(f"{max_vol:,.0f}\n".replace(",", " "), style=muted)
 
-    if up_x:
-        plt.bar(up_x, up_v, color=SAUGE_RGB, marker="sd", width=0.9)
-    if dn_x:
-        plt.bar(dn_x, dn_v, color=TERRA_RGB, marker="sd", width=0.9)
-
-    plt.xticks([])  # pas de labels x (alignement avec le chart principal pas garanti)
-    return Text.from_ansi(plt.build())
+    return text

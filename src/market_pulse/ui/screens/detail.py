@@ -620,7 +620,7 @@ class DetailScreen(Screen):
             lines.append(f" · [{age:>11}] {publisher:<20} · {title}")
         return "\n".join(lines)
 
-    def _trade_plan_text(self) -> str:
+    def _trade_plan_text(self) -> Text:
         tp = self.opp.trade_plan
         target_pct = (tp.target - tp.entry) / tp.entry * 100 if tp.entry else 0
         stop_pct = (tp.stop - tp.entry) / tp.entry * 100 if tp.entry else 0
@@ -628,17 +628,30 @@ class DetailScreen(Screen):
             "1d": "1 jour", "1w": "5 à 10 jours de bourse",
             "1m": "3 à 6 semaines", "1y": "6 à 18 mois",
         }.get(tp.horizon, "—")
-        direction_fr = "ACHAT (long)" if tp.direction == "long" else "VENTE À DÉCOUVERT (short)"
-        action = "ACHETER" if tp.direction == "long" else "VENDRE À DÉCOUVERT"
-        return (
-            f"PLAN DE TRADE · {tp.horizon.upper()} · {direction_fr}\n"
-            f" · Action               {action}\n"
-            f" · Prix d'entrée        {tp.entry:>10.2f}\n"
-            f" · Objectif (TP)        {tp.target:>10.2f}   {target_pct:+6.2f}%\n"
-            f" · Stop-loss (SL)       {tp.stop:>10.2f}   {stop_pct:+6.2f}%\n"
-            f" · Ratio risque/gain    {tp.risk_reward:>10.2f}\n"
-            f" · Horizon estimé       {horizon_desc}"
-        )
+        is_long = tp.direction == "long"
+        action = "ACHETER" if is_long else "VENDRE À DÉCOUVERT"
+        action_color = "#7FB069" if is_long else "#C97064"
+        direction_fr = "ACHAT (long)" if is_long else "VENTE À DÉCOUVERT (short)"
+
+        text = Text()
+        text.append(f"PLAN DE TRADE · {tp.horizon.upper()} · ", style="bold #E8B45D")
+        text.append(direction_fr, style=f"bold {action_color}")
+        text.append("\n")
+        text.append(" · Action               ")
+        text.append(action, style=f"bold {action_color}")
+        text.append("\n")
+        text.append(f" · Prix d'entrée        {tp.entry:>10.2f}\n")
+        text.append(f" · Objectif (TP)        {tp.target:>10.2f}   ")
+        text.append(f"{target_pct:+6.2f}%",
+                    style="#7FB069" if target_pct > 0 else "#C97064")
+        text.append("\n")
+        text.append(f" · Stop-loss (SL)       {tp.stop:>10.2f}   ")
+        text.append(f"{stop_pct:+6.2f}%",
+                    style="#7FB069" if stop_pct > 0 else "#C97064")
+        text.append("\n")
+        text.append(f" · Ratio risque/gain    {tp.risk_reward:>10.2f}\n")
+        text.append(f" · Horizon estimé       {horizon_desc}")
+        return text
 
 
 def _format_metadata(metadata: dict) -> str:
