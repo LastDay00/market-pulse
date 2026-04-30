@@ -4,9 +4,9 @@ Scanner de swing-trading en TUI (terminal) pour les actions et ETF européens et
 
 ## Démo
 
-<video src="https://github.com/LastDay00/market-pulse/raw/main/assets/demo.mp4" controls width="100%">
-  Voir la <a href="assets/demo.mp4">vidéo de démo</a> si la balise vidéo n'est pas rendue.
-</video>
+![Démo Market Pulse](assets/demo.gif)
+
+[Vidéo complète (53 s, mp4)](assets/demo.mp4)
 
 > **Avertissement** — Market Pulse est un outil d'aide à la décision pédagogique, pas un conseil en investissement. Aucune garantie sur la qualité des signaux. Utilisez à vos propres risques. Pas de garantie de résultat, pas de responsabilité des contributeurs.
 
