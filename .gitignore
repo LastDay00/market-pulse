@@ -53,5 +53,8 @@ Thumbs.db
 *.log
 logs/
 
+# Internal planning / design docs (kept local only, not pushed)
+docs/superpowers/
+
 # uv lock file is committed (reproducible builds)
 # uv.lock

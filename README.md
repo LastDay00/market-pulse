@@ -226,8 +226,6 @@ src/market_pulse/
 └── universe/            CSV des univers (S&P 500, CAC 40, etc.) + loader
 ```
 
-Détails du design : [`docs/superpowers/specs/2026-04-22-market-pulse-design.md`](docs/superpowers/specs/2026-04-22-market-pulse-design.md).
-
 ## Licence
 
 [MIT](LICENSE).
