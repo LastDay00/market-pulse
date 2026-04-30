@@ -167,6 +167,16 @@ Ou manuellement :
 chflags nohidden .venv/lib/python*/site-packages/*.pth
 ```
 
+### `AttributeError: module 'pandas' has no attribute 'DataFrame'` (ou `ModuleNotFoundError: No module named 'pandas_ta'`)
+
+Cache uv corrompu : un paquet a son `.dist-info` mais pas son module. Solution :
+
+```bash
+./install.sh --nuke
+```
+
+Cette option supprime le venv **et** le cache uv (`~/.cache/uv`) avant de tout réinstaller. `install.sh` détecte aussi automatiquement ce cas et relance la procédure une fois.
+
 ### Rate limit yfinance
 
 yfinance peut renvoyer des `429 Too Many Requests` si trop de tickers sont fetchés trop vite. Le cache SQLite (TTL 24h) limite ce risque. En cas de souci, attendre quelques minutes ou réduire la concurrence en éditant `max_concurrency` dans `src/market_pulse/__main__.py`.
