@@ -48,14 +48,16 @@ cd market-pulse
 Le script :
 
 1. Vérifie que `uv` est installé.
-2. Crée un venv `.venv/` et installe toutes les dépendances.
-3. Applique un workaround macOS connu (flag `UF_HIDDEN` sur les fichiers `.pth` ignoré par Python 3.12.5+ — voir [Dépannage](#dépannage)).
-4. Vérifie que le package est bien importable.
+2. Détecte si le projet est dans un dossier synchronisé (iCloud Drive, Dropbox, OneDrive). Si oui — typiquement `~/Documents` sur macOS — il place le venv dans `~/Library/Caches/market-pulse/venv` plutôt que dans `.venv/`. Sans ça, iCloud peut évincer des fichiers du venv et casser les imports (numpy, pandas…).
+3. Installe toutes les dépendances.
+4. Applique le workaround macOS pour le flag `UF_HIDDEN` sur les `.pth` (ignorés par Python 3.12.5+).
+5. Vérifie que les imports clés (`pandas`, `numpy`, `pandas_ta`, `yfinance`, `market_pulse`) fonctionnent. En cas d'install corrompue, retente automatiquement avec un cache uv propre.
 
 Options :
 
 ```bash
 ./install.sh --clean   # supprime l'ancien venv avant l'install
+./install.sh --nuke    # supprime venv ET cache uv (recours en cas de cache uv corrompu)
 ./install.sh --dev     # installe aussi pytest et les dépendances de test
 ```
 
@@ -64,16 +66,20 @@ Alternativement via Make :
 ```bash
 make install        # standard
 make install-dev    # avec dépendances de test
-make clean          # nettoie venv + caches + builds
+make clean          # nettoie venv (local et externe) + caches + builds
 ```
 
 ## Lancement
 
 ```bash
-uv run market-pulse
+./mp
 # ou
 make run
 ```
+
+Le wrapper `./mp` exporte `UV_PROJECT_ENVIRONMENT` vers le venv hors-iCloud puis appelle `uv run market-pulse`. **N'utilisez pas `uv run market-pulse` directement** si le projet est sous iCloud Drive : sans la variable, uv recréera un venv local dans iCloud et le bug d'éviction reviendra.
+
+Si votre projet n'est PAS dans un dossier synchronisé (par ex. `~/dev/market-pulse`), `./install.sh` crée un `.venv` classique et `uv run market-pulse` fonctionne normalement.
 
 Au premier lancement, le scan prend ~2-5 min selon la taille de l'univers et la vitesse de votre connexion. Les lancements suivants sont plus rapides grâce au cache SQLite (TTL 24h dans `~/.market-pulse/cache.db`).
 
@@ -167,15 +173,34 @@ Ou manuellement :
 chflags nohidden .venv/lib/python*/site-packages/*.pth
 ```
 
-### `AttributeError: module 'pandas' has no attribute 'DataFrame'` (ou `ModuleNotFoundError: No module named 'pandas_ta'`)
+### `AttributeError: module 'pandas' has no attribute 'DataFrame'` (ou `numpy`, `pandas_ta`…)
 
-Cache uv corrompu : un paquet a son `.dist-info` mais pas son module. Solution :
+**Cause la plus fréquente sur macOS : iCloud Drive synchronise `~/Documents`** et évince périodiquement des fichiers du venv. Les `.dist-info` restent mais les modules disparaissent — d'où l'erreur. La solution est de placer le venv hors d'iCloud :
+
+```bash
+./install.sh --clean
+./mp                  # ne plus utiliser `uv run market-pulse` directement
+```
+
+`install.sh` détecte automatiquement les chemins sous `~/Documents`, `~/Desktop`, `~/Library/Mobile Documents`, ainsi que les dossiers Dropbox / OneDrive, et place le venv dans `~/Library/Caches/market-pulse/venv`.
+
+Variantes :
+
+- Pour vérifier si iCloud sync est actif sur Documents :
+  ```bash
+  defaults read com.apple.finder FXICloudDriveDocuments
+  ```
+  `1` = synchronisé, `0` = non.
+- Pour désactiver la sync de Documents (System Settings → Apple ID → iCloud → Drive → Documents).
+- Ou déplacer le projet hors d'iCloud (par ex. `~/dev/market-pulse`).
+
+**Cause secondaire** : cache uv corrompu (un paquet a son `.dist-info` mais pas son module dès la première install). Recours :
 
 ```bash
 ./install.sh --nuke
 ```
 
-Cette option supprime le venv **et** le cache uv (`~/.cache/uv`) avant de tout réinstaller. `install.sh` détecte aussi automatiquement ce cas et relance la procédure une fois.
+Cette option supprime venv **et** cache uv (`~/.cache/uv`) avant de tout réinstaller. `install.sh` détecte aussi automatiquement ce cas et retente une fois.
 
 ### Rate limit yfinance
 
