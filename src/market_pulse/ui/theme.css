@@ -191,3 +191,41 @@ DataTable > .datatable--cursor {
 .highlight-amber {
     color: #E8B45D;
 }
+
+/* Chat drawer Claude — bas de l'écran détail, toggle via 'c' */
+#chat-drawer {
+    height: 18;
+    background: #0A0A0B;
+    border-top: heavy #E8B45D;
+    padding: 0 1;
+    margin: 0;
+}
+
+#chat-header {
+    height: 1;
+    color: #E8B45D;
+    text-style: bold;
+    background: #0A0A0B;
+    padding: 0 1;
+}
+
+#chat-log {
+    height: 1fr;
+    background: #0A0A0B;
+    color: #E8E6E3;
+    border: round #2A2A2E;
+    padding: 0 1;
+    margin: 0 0 0 0;
+}
+
+#chat-input {
+    height: 3;
+    background: #0A0A0B;
+    color: #E8E6E3;
+    border: solid #2A2A2E;
+    margin: 0;
+}
+
+#chat-input:focus {
+    border: solid #E8B45D;
+}

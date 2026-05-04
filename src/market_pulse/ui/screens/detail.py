@@ -16,6 +16,7 @@ from market_pulse.data.models import Bar
 from market_pulse.engine.scanner import Opportunity, enrich_opportunity
 from market_pulse.ui.widgets.candle_chart import render_candlestick_chart
 from market_pulse.ui.widgets.chart_image import save_chart_to_temp
+from market_pulse.ui.widgets.chat_drawer import ChatDrawer
 
 SAUGE = (127, 176, 105)
 TERRA = (201, 112, 100)
@@ -121,9 +122,10 @@ def _format_score_bar(score: float, width: int = 6) -> str:
 
 class DetailScreen(Screen):
     BINDINGS = [
-        Binding("escape", "app.pop_screen", "Retour", show=True),
+        Binding("escape", "back_or_close_chat", "Retour", show=True),
         Binding("f", "load_data", "Charger/Rafraîchir données", show=True),
         Binding("g", "open_chart_external", "Chart en plein écran", show=True),
+        Binding("c", "toggle_chat", "Chat Claude", show=True),
         Binding("p", "diag_protocol", "Diag protocole image", show=False),
         Binding("q", "app.quit", "Quitter", show=True),
     ]
@@ -134,6 +136,8 @@ class DetailScreen(Screen):
         self._loading = False
         # Chart PNG généré au mount, fichier temp
         self._chart_png_path = None
+        # Drawer Claude — créé dans compose, caché par défaut. Activé via 'c'.
+        self._chat_drawer: ChatDrawer | None = None
 
     def compose(self) -> ComposeResult:
         yield Header(show_clock=True)
@@ -170,6 +174,10 @@ class DetailScreen(Screen):
                          id="balance-q-panel", classes="panel")
             yield Static(self._cashflow_q_text(),
                          id="cashflow-q-panel", classes="panel")
+        # Drawer Claude : caché par défaut, visible quand on appuie sur 'c'
+        self._chat_drawer = ChatDrawer(self.opp)
+        self._chat_drawer.styles.display = "none"
+        yield self._chat_drawer
         yield Footer()
 
     def _chart_header_text(self) -> Text:
@@ -213,12 +221,36 @@ class DetailScreen(Screen):
         return text
 
     def on_unmount(self) -> None:
-        """Nettoie le fichier PNG temporaire à la fermeture de l'écran."""
+        """Nettoie le fichier PNG temporaire et la session chat à la fermeture."""
         if self._chart_png_path and self._chart_png_path.exists():
             try:
                 self._chart_png_path.unlink()
             except Exception:
                 pass
+        # Clôt proprement la session Claude (sous-processus claude CLI)
+        if self._chat_drawer is not None:
+            self._shutdown_chat_session()
+
+    @work(exclusive=True)
+    async def _shutdown_chat_session(self) -> None:
+        if self._chat_drawer is not None:
+            await self._chat_drawer.shutdown()
+
+    def action_toggle_chat(self) -> None:
+        """Toggle le drawer Claude. Touche 'c'."""
+        if self._chat_drawer is None:
+            return
+        if self._chat_drawer.is_visible():
+            self._chat_drawer.hide()
+        else:
+            self._chat_drawer.show()
+
+    def action_back_or_close_chat(self) -> None:
+        """Esc : ferme le drawer s'il est ouvert, sinon retourne au scanner."""
+        if self._chat_drawer is not None and self._chat_drawer.is_visible():
+            self._chat_drawer.hide()
+            return
+        self.app.pop_screen()
 
     def action_diag_protocol(self) -> None:
         """Affiche le protocole d'image détecté par textual-image au démarrage."""
