@@ -19,6 +19,7 @@ Scanner de swing-trading en TUI (terminal) pour les actions et ETF européens et
 - Cache SQLite (TTL 24h) sur les meta et fundamentals pour éviter le rate-limit yfinance.
 - Filtres long / short / les deux.
 - Vue détail avec graph en chandelier, ratios financiers, news.
+- **Chat Claude intégré** dans la vue détail (touche `c`) : un analyste financier qui voit le ticker en cours et peut répondre à des questions sur les comptes de résultat, les ratios, les signaux, etc. Auth via le forfait Claude.ai Pro/Max existant (pas de clé API à payer).
 
 ## Prérequis
 
@@ -139,8 +140,24 @@ Affiche le plan de trade, les indicateurs, les fondamentaux, le graph en chandel
 | --- | --- |
 | `f` | Charger / rafraîchir les données yfinance pour ce ticker |
 | `g` | Ouvrir le chart en plein écran |
-| `Esc` | Retour au scanner |
+| `c` | Ouvrir / fermer le chat Claude finance |
+| `Esc` | Ferme le chat s'il est ouvert, sinon retour au scanner |
 | `q` | Quitter |
+
+### Chat Claude finance (touche `c`)
+
+Un drawer s'ouvre en bas de la vue détail avec un input et l'historique de la conversation. Claude est briefé comme analyste financier et a accès en lecture aux données déjà chargées pour le ticker courant (prix, signaux, plan de trade, ratios de valorisation, états financiers annuels et trimestriels, news) via 8 outils MCP custom.
+
+Pour les tickers hors top 20, les fondamentaux ne sont pas chargés par défaut — appuie sur `f` avant d'ouvrir le chat pour que Claude ait les comptes de résultat, le bilan et les flux de trésorerie.
+
+**Prérequis** :
+
+- Claude Code installé : `npm install -g @anthropic-ai/claude-code` (nécessite Node.js).
+- Login fait une fois : `claude login` dans un terminal — ouvre un navigateur, OAuth claude.ai. **Le chat utilise ton forfait Pro / Max existant, pas une clé API.** Aucune facture supplémentaire à l'usage.
+
+Si Claude n'est pas dispo, un toast s'affiche au démarrage et la touche `c` ouvre le drawer en mode lecture seule avec le diagnostic.
+
+La conversation est éphémère : elle est effacée quand tu quittes la vue détail (Esc). Pas de persistance disque.
 
 ## Configuration et fichiers
 
@@ -226,6 +243,7 @@ src/market_pulse/
 ├── config.py            chemins et préférences utilisateur
 ├── data/                providers (yfinance), cache SQLite, modèles
 ├── engine/              indicateurs, signaux, scoring, plan de trade, scanner
+├── chat/                wrapper claude-agent-sdk : prompt, tools MCP, session
 ├── ui/                  app Textual, écrans, widgets, palette
 └── universe/            CSV des univers (S&P 500, CAC 40, etc.) + loader
 ```
