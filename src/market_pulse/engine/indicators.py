@@ -11,6 +11,9 @@ def macd(
     close: pd.Series, fast: int = 12, slow: int = 26, signal: int = 9
 ) -> tuple[pd.Series, pd.Series, pd.Series]:
     df = ta.macd(close, fast=fast, slow=slow, signal=signal)
+    if df is None:
+        empty = pd.Series(dtype=float)
+        return empty, empty, empty
     return (
         df[f"MACD_{fast}_{slow}_{signal}"],
         df[f"MACDs_{fast}_{slow}_{signal}"],
