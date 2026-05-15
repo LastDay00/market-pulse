@@ -102,13 +102,15 @@ class ScannerScreen(Screen):
         self.app.exit(return_code=42)
 
     def action_ai_analysis(self) -> None:
-        """Ouvre l'écran d'analyse IA globale sur le top 50 (touche `a`).
+        """Ouvre l'écran d'analyse IA en entonnoir (touche `a`).
 
-        Utilise la liste filtrée courante pour respecter la recherche en cours.
+        Part de la liste filtrée courante (max 200) puis Claude réduit
+        progressivement à 100 → 50 → 25 → 12 → 6 → 3 sur 6 rounds avec une
+        profondeur d'analyse croissante.
         """
-        from market_pulse.ui.screens.global_analysis import GlobalAnalysisScreen
+        from market_pulse.ui.screens.funnel_analysis import FunnelAnalysisScreen
         source = self._filtered_opps or self.opportunities
-        self.app.push_screen(GlobalAnalysisScreen(list(source)))
+        self.app.push_screen(FunnelAnalysisScreen(list(source)))
 
     def action_focus_search(self) -> None:
         """Touche '/' → focus sur l'input de recherche."""

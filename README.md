@@ -100,7 +100,7 @@ Liste triée par score décroissant des opportunités détectées.
 | `Enter` | Ouvrir la vue détail |
 | `/` | Recherche par ticker ou nom |
 | `Esc` | Effacer la recherche |
-| `a` | Analyse IA globale du top 50 (Claude commente la sélection) |
+| `a` | Entonnoir d'analyse IA — Claude réduit 200 candidats à un top 3 sur 6 rounds |
 | `r` | Relancer un scan (force refresh) |
 | `Ctrl+P` | Ouvrir la palette de commandes |
 | `q` | Quitter |
@@ -151,11 +151,24 @@ Un drawer s'ouvre en bas de la vue détail avec un input et l'historique de la c
 
 Pour les tickers hors top 50, les fondamentaux ne sont pas chargés par défaut — appuie sur `f` avant d'ouvrir le chat pour que Claude ait les comptes de résultat, le bilan et les flux de trésorerie.
 
-### Analyse IA globale (touche `a` depuis le scanner)
+### Entonnoir d'analyse IA (touche `a` depuis le scanner)
 
-Appuie sur `a` dans l'écran scanner pour ouvrir un écran d'analyse IA : Claude reçoit le résumé des 50 premières opportunités (ticker, secteur, direction, score, plan de trade, perfs multi-horizons, indicateurs clés) et renvoie une analyse structurée en quatre sections : top 5 selon lui, opportunités à éviter, patterns d'ensemble (secteurs, biais directionnel), points de vigilance globaux.
+Au lieu d'une analyse one-shot, Claude exécute un **entonnoir à 6 rounds** sur les 200 premières opportunités, avec une profondeur d'analyse croissante à chaque tour :
 
-Cette analyse est one-shot et ne consomme pas d'outils MCP — Claude raisonne uniquement sur les chiffres injectés dans le prompt. Touche `r` pour relancer, `Esc` ou `q` pour revenir au scanner. Mêmes prérequis que le chat par-ticker (`claude` installé et logué).
+| Round | Réduction | Profondeur |
+| --- | --- | --- |
+| 1 | 200 → 100 | tri rapide sur score, R/R et momentum 20-60j |
+| 2 | 100 → 50 | filtrage technique fin sur cohérence des indicateurs |
+| 3 | 50 → 25 | validation par les ratios de valorisation |
+| 4 | 25 → 12 | croisement technique × fondamental |
+| 5 | 12 → 6 | examen approfondi (news, diversification sectorielle) |
+| 6 | 6 → 3 | verdict détaillé : thèse, technique, fonda, catalyseur/risque, conviction 1-10 |
+
+À chaque round, Claude justifie sa coupe en 3-5 lignes en citant des tickers et chiffres, puis renvoie la liste des survivants entre des balises strictes (`=== SELECTED ===` / `=== END ===`) que l'app parse pour passer au round suivant.
+
+À partir du round 3, l'app enrichit silencieusement les candidats qui n'ont pas encore leurs fondamentaux pour que Claude puisse raisonner sur valorisation, marges, croissance et bilan. Au round final, Claude produit pour chacun des 3 finalistes une analyse structurée (thèse d'investissement, lecture technique, lecture fondamentale, catalyseurs ou risques, note de conviction).
+
+L'entonnoir prend typiquement 2-4 minutes selon la verbosité de Claude. Touche `r` pour relancer, `Esc` ou `q` pour revenir au scanner. Mêmes prérequis que le chat par-ticker (`claude` installé et logué). Si la balise `SELECTED` d'un round est illisible, l'app retombe automatiquement sur les N meilleurs par score — l'entonnoir continue.
 
 **Prérequis** :
 
