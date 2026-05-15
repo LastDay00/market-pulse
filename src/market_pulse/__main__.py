@@ -20,7 +20,7 @@ async def _do_scan(force_refresh: bool = False, settings: UserSettings | None = 
     settings = settings or UserSettings.load()
     names = load_universe()
     tickers = sorted(names.keys())
-    provider = YFinanceProvider(max_concurrency=10)
+    provider = YFinanceProvider(max_concurrency=20)
     global _LAST_PROVIDER
     _LAST_PROVIDER = provider
 

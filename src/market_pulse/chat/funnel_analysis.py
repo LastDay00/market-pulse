@@ -1,25 +1,31 @@
-"""Entonnoir d'analyse IA multi-rounds : 200 → 100 → 50 → 25 → 12 → 6 → 3.
+"""Entonnoir d'analyse IA multi-rounds : ~1500 → 750 → 375 → 188 → 94 → 47 → 23 → 10.
 
 À chaque round, Claude reçoit la liste courante des candidats avec un niveau
 de détail croissant, élimine la moitié, et passe au round suivant. Au round
-final (verdict), il produit une analyse détaillée des 3 finalistes.
+final (verdict), il produit une analyse détaillée des 10 finalistes.
 
-Le module ne dépend pas de MCP : on passe tout le contexte dans le prompt
-utilisateur. Une seule `ClaudeSDKClient` est ouverte et réutilisée pour les
-6 tours (multi-tour natif du SDK).
+PARALLÉLISME — Les premiers rounds (gros volumes) sont parallélisés par
+chunks : la liste est découpée en morceaux de ~150 candidats, et un
+subprocess `claude` est lancé pour chaque chunk via `ClaudeSDKClient`.
+Jusqu'à `MAX_PARALLEL_CLAUDE` subprocess tournent en concurrence (limité
+par sémaphore pour ne pas saturer la machine sur macOS). Les rounds tardifs
+(<= 188 candidats) tournent en un seul appel séquentiel.
 
-Parsing : Claude doit terminer chaque réponse par un bloc
+Parsing : Claude doit terminer chaque réponse par un bloc strict
+
     === SELECTED ===
     TICKER1
     TICKER2
     ...
     === END ===
-qu'on extrait par regex. Si le parse échoue, on retombe sur les N premiers
-candidats par score (fallback safe).
+
+qu'on extrait par regex. Si le parse échoue, fallback sur les N premiers
+candidats par score (l'entonnoir ne se bloque jamais).
 """
 from __future__ import annotations
 
 import asyncio
+import math
 import re
 from dataclasses import dataclass, field
 from typing import AsyncIterator, Literal
@@ -30,32 +36,59 @@ from market_pulse.data.providers.base import Provider
 from market_pulse.engine.scanner import Opportunity, enrich_opportunity
 
 
-DEFAULT_SCOPE = 200
+# Limite concurrente de subprocess `claude` simultanés. 5 = bon compromis
+# sur macOS (chaque subprocess prend ~100-200 MB de RAM + 1 connexion API).
+MAX_PARALLEL_CLAUDE = 5
 
-# Chaque round : (target_size, label_court)
-ROUNDS: list[tuple[int, str]] = [
-    (100, "tri rapide"),
-    (50, "filtrage technique"),
-    (25, "validation fondamentale"),
-    (12, "examen approfondi"),
-    (6, "présélection finale"),
-    (3, "verdict"),
+# À partir de quel round (0-indexed) on enrichit les fondamentaux des
+# candidats sans meta — round 4 (index 3) correspond au passage en format
+# "extended" qui exploite valuation/marges/croissance.
+ENRICH_FROM_ROUND = 3
+
+# Concurrence yfinance pour l'enrichissement progressif (separate from the
+# scan-time concurrency configured in __main__.py).
+ENRICH_CONCURRENCY = 8
+
+
+@dataclass
+class RoundConfig:
+    target: int
+    label: str
+    fmt: Literal["basic", "extended", "deep"]
+    # Si fixé, le round est parallélisé par chunks de cette taille.
+    # Sinon, un seul appel Claude sur tous les candidats.
+    chunk_size: int | None = None
+
+
+# 7 rounds : 1500 → 750 → 375 → 188 → 94 → 47 → 23 → 10.
+# Chaque round halve approximativement la liste. Les 3 premiers tournent
+# en parallèle par chunks ; les 4 derniers en single-call séquentiel.
+ROUNDS: list[RoundConfig] = [
+    RoundConfig(target=750, label="présélection massive",       fmt="basic",    chunk_size=150),
+    RoundConfig(target=375, label="tri rapide",                  fmt="basic",    chunk_size=150),
+    RoundConfig(target=188, label="filtrage technique",          fmt="basic",    chunk_size=140),
+    RoundConfig(target=94,  label="consolidation technique",     fmt="extended"),
+    RoundConfig(target=47,  label="validation fondamentale",     fmt="extended"),
+    RoundConfig(target=23,  label="examen approfondi",           fmt="deep"),
+    RoundConfig(target=10,  label="verdict — top 10",            fmt="deep"),
 ]
 
 
 SYSTEM_PROMPT_FUNNEL = """Tu es un analyste financier sénior pilotant un \
-processus d'entonnoir d'analyse à 6 rounds : on part de 200 opportunités \
-techniques de swing-trading et on réduit progressivement la liste jusqu'à un \
-top 3 sur lequel tu dois avoir une forte conviction.
+processus d'entonnoir d'analyse multi-rounds. On part d'environ 1500 \
+opportunités techniques de swing-trading et on réduit progressivement la \
+liste jusqu'à un top 10 sur lequel tu dois avoir une forte conviction.
 
-À chaque round on te donne la liste courante des candidats, un niveau de \
-détail croissant, et la taille cible pour le round suivant. Tu élimines les \
-plus faibles et tu gardes EXACTEMENT le nombre demandé.
+Les premiers rounds (gros volumes) sont parallélisés : on te donne un \
+sous-ensemble (chunk) des candidats et tu sélectionnes une proportion. \
+Les rounds tardifs te donnent l'ensemble survivant en un seul appel. À \
+chaque appel le prompt te dit combien de candidats tu as et combien tu \
+dois conserver — sois précis sur ce nombre.
 
-Format de réponse OBLIGATOIRE à chaque round :
-1. Une explication courte (3-5 lignes max) de tes critères de coupe avec \
-tickers et chiffres. Pour le round final, donne en plus une analyse détaillée \
-des 3 finalistes (voir ci-dessous).
+FORMAT DE RÉPONSE OBLIGATOIRE
+1. Une explication courte (3-5 lignes) de tes critères de coupe avec \
+tickers et chiffres. Pour le round VERDICT (top 10 final), donne en plus \
+une analyse détaillée des 10 finalistes (voir ci-dessous).
 2. Termine TOUJOURS par un bloc strictement formaté :
 
 === SELECTED ===
@@ -65,12 +98,11 @@ TICKER2
 === END ===
 
 RÈGLES STRICTES
-- Le nombre de tickers entre les balises DOIT correspondre exactement à la \
-cible demandée.
+- Nombre de tickers entre les balises = exactement la cible demandée.
 - Un ticker par ligne, sans puce, sans numéro, sans commentaire.
 - N'invente pas de tickers — uniquement ceux de la liste fournie.
 
-ROUND FINAL (verdict top 3)
+ROUND FINAL (verdict top 10)
 Avant la liste finale, pour chaque finaliste, écris :
   ### TICKER — Nom
   **Thèse (LONG ou SHORT)** : pourquoi cette direction.
@@ -105,11 +137,11 @@ def _key_inds(opp: Opportunity, max_items: int = 4) -> str:
 
 
 def _fmt_basic(rank: int, opp: Opportunity) -> str:
-    """Ligne ultra-compacte, rounds 1-2 (200→100→50)."""
+    """Ligne ultra-compacte, rounds 1-3 (parallèle)."""
     tp = opp.trade_plan
     sect = (opp.meta.sector[:10] if opp.meta and opp.meta.sector else "—")
     return (
-        f"{rank:03d}. {opp.ticker:<7} [{sect:<10}] "
+        f"{rank:04d}. {opp.ticker:<7} [{sect:<10}] "
         f"{tp.direction.upper():<5} sc={opp.score:5.1f} "
         f"R/R={tp.risk_reward:4.2f} "
         f"5j={_pct(opp,5):<7} 20j={_pct(opp,20):<7} 60j={_pct(opp,60):<7} "
@@ -118,7 +150,7 @@ def _fmt_basic(rank: int, opp: Opportunity) -> str:
 
 
 def _fmt_extended(rank: int, opp: Opportunity) -> str:
-    """Rounds 3-4 (50→25→12), ajoute valorisation/fondamentaux compacts."""
+    """Rounds 4-5, ajoute valorisation/fondamentaux compacts."""
     tp = opp.trade_plan
     name = (opp.name or "")[:18]
     sect = (opp.meta.sector[:14] if opp.meta and opp.meta.sector else "—")
@@ -148,7 +180,7 @@ def _fmt_extended(rank: int, opp: Opportunity) -> str:
 
 
 def _fmt_deep(rank: int, opp: Opportunity) -> str:
-    """Rounds 5-6 : bloc multi-lignes par candidat avec tout ce qu'on a."""
+    """Rounds 6-7 : bloc multi-lignes avec tout ce qu'on a."""
     tp = opp.trade_plan
     m = opp.meta
     lines = [f"### #{rank} — {opp.ticker} · {opp.name or '?'}"]
@@ -224,83 +256,100 @@ def _fmt_deep(rank: int, opp: Opportunity) -> str:
     return "\n".join(lines)
 
 
-# ─── Construction des prompts par round ────────────────────────────────────
+_FMT_FUNCS = {"basic": _fmt_basic, "extended": _fmt_extended, "deep": _fmt_deep}
+
+
+# ─── Critères par round ────────────────────────────────────────────────────
 
 _ROUND_CRITERIA: list[str] = [
-    # Round 1 : 200 → 100
-    "Élimine en priorité :\n"
-    "- Les R/R < 2 si le score n'est pas excellent (<70).\n"
+    # Round 1 : présélection massive (1500 → 750)
+    "Élimine la moitié la plus faible :\n"
+    "- R/R sous 2 quand le score est moyen (<70).\n"
     "- LONG sur tickers en chute lourde 20-60j (perf très négative).\n"
     "- SHORT sur tickers en forte hausse 20-60j.\n"
     "- Scores faibles à conviction quasi nulle.\n"
-    "À ce stade tu n'as que du technique — sois généreux, garde tout ce qui "
-    "n'a pas de drapeau rouge.",
-    # Round 2 : 100 → 50
-    "Garde ceux qui ont :\n"
-    "- Score solide ET R/R confortable.\n"
-    "- Indicateurs cohérents avec la direction (RSI, MACD hist, momentum 5j).\n"
-    "- Pas de sur-extension manifeste sur perf 20-60j.\n"
-    "Élimine les signaux ambigus ou contradictoires.",
-    # Round 3 : 50 → 25
-    "À partir de ce round, intègre les fondamentaux quand ils sont dispos :\n"
+    "Sois généreux : à ce stade tu n'as que du technique, garde tout ce qui "
+    "n'a pas de drapeau rouge évident.",
+    # Round 2 : tri rapide (750 → 375)
+    "Coupe encore de moitié :\n"
+    "- Garde les meilleurs scores avec R/R confortable.\n"
+    "- Élimine les momentum incohérents avec la direction du signal.\n"
+    "- Privilégie la cohérence des indicateurs (RSI, MACD hist, momentum 5j).",
+    # Round 3 : filtrage technique (375 → 188)
+    "Filtrage fin sur la cohérence des signaux :\n"
+    "- Garde ceux où score, R/R et indicateurs racontent la même histoire.\n"
+    "- Élimine les sur-extensions manifestes (perf 60j extrême dans le sens "
+    "du signal — risque de retournement).\n"
+    "- Élimine les signaux ambigus ou contradictoires.",
+    # Round 4 : consolidation technique (188 → 94)
+    "Garde les 94 meilleurs candidats techniques :\n"
+    "- Plus haut score + R/R confortable + perfs cohérentes.\n"
+    "- Si les fondamentaux sont chargés, ils confortent ou nuancent le signal "
+    "technique — sers-toi en pour départager les cas serrés.\n"
+    "- Élimine les R/R serrés sans excellence technique compensatrice.",
+    # Round 5 : validation fondamentale (94 → 47)
+    "Intègre pleinement les fondamentaux :\n"
     "- LONG : préfère valorisation raisonnable (PEG < 2 si dispo, marges "
     "positives, croissance CA YoY non négative, dette maîtrisée).\n"
     "- SHORT : préfère valorisation tendue (PE élevé, ROE médiocre, "
     "croissance en décélération).\n"
-    "- Conserve un ticker sans fonda UNIQUEMENT si le signal technique est "
-    "exceptionnel.",
-    # Round 4 : 25 → 12
-    "Croise technique × fondamental. Élimine :\n"
-    "- LONG sur boîtes avec marges qui s'effondrent ou dette qui explose.\n"
-    "- SHORT sur boîtes ultra-solides (marges hautes, croissance forte, "
-    "peu de dette).\n"
-    "- Doublons sectoriels (si 5 banques se présentent, garde les 2 meilleures).",
-    # Round 5 : 12 → 6
-    "Présélection finale, analyse fine de chaque candidat :\n"
-    "- Confluence des signaux (score, R/R, indicateurs, momentum).\n"
-    "- Solidité fondamentale (marges, ROE, dette).\n"
+    "- Conserve un ticker sans fondamentaux UNIQUEMENT si le signal technique "
+    "est exceptionnel.",
+    # Round 6 : examen approfondi (47 → 23)
+    "Examen approfondi de chaque candidat :\n"
+    "- Confluence technique × fondamental (élimine les LONG sur boîtes en "
+    "détresse, les SHORT sur boîtes ultra-solides).\n"
+    "- Doublons sectoriels (si 5 banques se présentent, garde les 2 meilleures).\n"
     "- Catalyseurs dans les news récentes (positives pour LONG, négatives "
-    "pour SHORT).\n"
-    "- Diversification sectorielle entre les 6 retenus.",
-    # Round 6 : 6 → 3 (verdict)
-    "ROUND FINAL. Tu dois choisir les 3 opportunités à plus forte conviction.\n"
+    "pour SHORT) si disponibles.",
+    # Round 7 : verdict — top 10 (23 → 10)
+    "ROUND FINAL — VERDICT TOP 10.\n"
+    "Tu dois choisir les 10 opportunités avec la plus forte conviction.\n"
     "Avant la liste finale, donne pour CHAQUE finaliste une analyse "
     "structurée (Thèse, Technique, Fondamental, Catalyseur/risque, "
-    "Conviction 1-10 avec justification) — voir le format dans le system "
-    "prompt.",
+    "Conviction 1-10 avec justification) — voir le format dans le system prompt.\n"
+    "Vise une diversification sectorielle raisonnable et un mix LONG/SHORT "
+    "cohérent avec ce que tu as observé dans la sélection.",
 ]
 
-_ROUND_FMT = [_fmt_basic, _fmt_basic, _fmt_extended, _fmt_extended, _fmt_deep, _fmt_deep]
 
+def build_round_prompt(round_idx: int, target: int,
+                        candidates: list[Opportunity],
+                        chunk_info: tuple[int, int] | None = None) -> str:
+    """Construit le prompt envoyé à Claude pour un round.
 
-def build_round_prompt(round_index: int, target: int,
-                        candidates: list[Opportunity]) -> str:
+    Si `chunk_info=(idx, total)` est fourni, le prompt mentionne qu'il s'agit
+    d'un chunk parmi N (mode parallèle). Sinon mode séquentiel.
+    """
+    cfg = ROUNDS[round_idx]
     n = len(candidates)
-    _target_size, label = ROUNDS[round_index]
-    fmt = _ROUND_FMT[round_index]
-    criteria = _ROUND_CRITERIA[round_index]
-    if fmt is _fmt_deep:
+    fmt = _FMT_FUNCS[cfg.fmt]
+    criteria = _ROUND_CRITERIA[round_idx]
+
+    if cfg.fmt == "deep":
         body = "\n\n".join(fmt(i + 1, o) for i, o in enumerate(candidates))
     else:
         body = "\n".join(fmt(i + 1, o) for i, o in enumerate(candidates))
+
+    chunk_label = ""
+    if chunk_info is not None:
+        idx, total = chunk_info
+        chunk_label = f" · chunk {idx + 1}/{total} (parallèle)"
+
     return (
-        f"# Round {round_index + 1}/6 — {label}\n\n"
-        f"Tu as {n} candidats. Conserve EXACTEMENT **{target}** "
-        f"pour le round suivant.\n\n"
+        f"# Round {round_idx + 1}/{len(ROUNDS)} — {cfg.label}{chunk_label}\n\n"
+        f"Tu as {n} candidats. Conserve EXACTEMENT **{target}** pour la suite.\n\n"
         f"## Critères pour ce round\n{criteria}\n\n"
         f"## Candidats\n{body}\n\n"
         f"## Tâche\n"
-        f"1. Explique en 3-5 lignes ta logique de coupe — sauf au round final "
-        f"où tu dois donner l'analyse détaillée des 3 finalistes avant la liste.\n"
+        f"1. Explique en 3-5 lignes ta logique de coupe — sauf au round verdict "
+        f"où tu dois donner l'analyse détaillée des 10 finalistes.\n"
         f"2. Termine par exactement {target} tickers entre `=== SELECTED ===` "
         f"et `=== END ===`, un par ligne, sans puce ni numéro."
     )
 
 
 # ─── Parsing de la sélection ───────────────────────────────────────────────
-
-_TICKER_LINE_RE = re.compile(r"^[A-Z0-9][A-Z0-9.\-]{0,9}$")
-
 
 def parse_selected(text: str, valid_tickers: set[str], target: int) -> list[str]:
     """Extrait la liste des tickers conservés entre les balises."""
@@ -315,7 +364,6 @@ def parse_selected(text: str, valid_tickers: set[str], target: int) -> list[str]
         raw = re.sub(r"^\d+[\.\)]\s*", "", raw)  # "1. AAPL" → "AAPL"
         if not raw:
             continue
-        # Prendre le premier token uppercase
         tok = raw.split()[0].upper().strip(",.;")
         if tok in valid_tickers and tok not in out:
             out.append(tok)
@@ -329,7 +377,17 @@ def parse_selected(text: str, valid_tickers: set[str], target: int) -> list[str]
 @dataclass
 class FunnelEvent:
     """Événement émis vers la UI au fil de l'entonnoir."""
-    kind: Literal["round_start", "enrich", "text", "round_done", "error", "end"]
+    kind: Literal[
+        "info",           # message d'information (démarrage, fin de phase)
+        "round_start",    # début d'un round
+        "enrich",         # enrichissement yfinance en cours
+        "chunk_start",    # un chunk parallèle vient de démarrer
+        "chunk_done",     # un chunk parallèle vient de finir
+        "text",           # texte/commentaire de Claude (rounds séquentiels)
+        "round_done",     # fin d'un round, candidats retenus
+        "error",
+        "end",
+    ]
     round_index: int = 0
     text: str = ""
     selected: list[str] = field(default_factory=list)
@@ -340,9 +398,47 @@ class FunnelAnalysisSession:
     """Entonnoir multi-rounds. Une instance = un run complet."""
 
     def __init__(self, opps: list[Opportunity], provider: Provider | None,
-                 scope: int = DEFAULT_SCOPE) -> None:
-        self.opps = opps[:scope]
+                 scope: int | None = None) -> None:
+        self.opps = list(opps) if scope is None else opps[:scope]
         self.provider = provider
+
+    # ── Claude calls ──────────────────────────────────────────────────────
+
+    @staticmethod
+    async def _one_claude_call(prompt: str) -> str:
+        """Un appel Claude indépendant (subprocess `claude` dédié).
+
+        Chaque appel utilise sa propre `ClaudeSDKClient` → son propre
+        subprocess. C'est ce qui permet le parallélisme entre chunks.
+        """
+        options = ClaudeAgentOptions(system_prompt=SYSTEM_PROMPT_FUNNEL)
+        client = ClaudeSDKClient(options=options)
+        buffer = ""
+        try:
+            await client.__aenter__()
+            await client.query(prompt)
+            async for msg in client.receive_response():
+                if type(msg).__name__ == "ResultMessage":
+                    continue
+                content = getattr(msg, "content", None)
+                if content is None:
+                    continue
+                if isinstance(content, str):
+                    buffer += content
+                    continue
+                for block in content:
+                    if type(block).__name__ == "TextBlock":
+                        t = getattr(block, "text", "")
+                        if t:
+                            buffer += t
+        finally:
+            try:
+                await client.__aexit__(None, None, None)
+            except Exception:
+                pass
+        return buffer
+
+    # ── Enrichissement yfinance ───────────────────────────────────────────
 
     async def _enrich_missing(self, candidates: list[Opportunity]) -> int:
         """Charge meta+fonda pour les tickers sans meta. Best-effort."""
@@ -351,7 +447,7 @@ class FunnelAnalysisSession:
         missing = [o for o in candidates if o.meta is None]
         if not missing:
             return 0
-        sem = asyncio.Semaphore(5)
+        sem = asyncio.Semaphore(ENRICH_CONCURRENCY)
 
         async def _one(o: Opportunity) -> None:
             async with sem:
@@ -364,6 +460,105 @@ class FunnelAnalysisSession:
         await asyncio.gather(*(_one(o) for o in missing))
         return len(missing)
 
+    # ── Rounds parallèles (chunks) ────────────────────────────────────────
+
+    async def _run_round_parallel(
+        self,
+        round_idx: int,
+        candidates: list[Opportunity],
+        queue: "asyncio.Queue[FunnelEvent | None]",
+    ) -> list[Opportunity]:
+        """Découpe les candidats en chunks, lance N subprocess Claude en
+        parallèle (limités par sémaphore), agrège les résultats."""
+        cfg = ROUNDS[round_idx]
+        assert cfg.chunk_size is not None
+        chunks = [
+            candidates[i:i + cfg.chunk_size]
+            for i in range(0, len(candidates), cfg.chunk_size)
+        ]
+        num_chunks = len(chunks)
+        per_chunk = math.ceil(cfg.target / num_chunks)
+
+        await queue.put(FunnelEvent(
+            kind="info", round_index=round_idx,
+            text=f"  ⇉ {num_chunks} chunks × {per_chunk} retenus "
+                 f"= ~{num_chunks * per_chunk} (cible {cfg.target}, "
+                 f"max {MAX_PARALLEL_CLAUDE} en parallèle)",
+        ))
+
+        sem = asyncio.Semaphore(MAX_PARALLEL_CLAUDE)
+
+        async def chunk_task(idx: int, chunk: list[Opportunity]) -> list[str]:
+            async with sem:
+                await queue.put(FunnelEvent(
+                    kind="chunk_start", round_index=round_idx,
+                    text=f"  ▷ chunk {idx + 1}/{num_chunks} "
+                         f"démarré ({len(chunk)} → {per_chunk})",
+                ))
+                try:
+                    prompt = build_round_prompt(
+                        round_idx, per_chunk, chunk,
+                        chunk_info=(idx, num_chunks),
+                    )
+                    text = await self._one_claude_call(prompt)
+                    valid = {o.ticker for o in chunk}
+                    sel = parse_selected(text, valid, per_chunk)
+                    if not sel:
+                        sel = [o.ticker for o in chunk[:per_chunk]]
+                        await queue.put(FunnelEvent(
+                            kind="error", round_index=round_idx,
+                            text=f"  chunk {idx + 1} : SELECTED illisible — "
+                                 f"fallback sur top-{per_chunk} par score",
+                        ))
+                    await queue.put(FunnelEvent(
+                        kind="chunk_done", round_index=round_idx,
+                        text=f"  ✓ chunk {idx + 1}/{num_chunks} : "
+                             f"{len(sel)} retenus",
+                    ))
+                    return sel
+                except Exception as e:
+                    await queue.put(FunnelEvent(
+                        kind="error", round_index=round_idx,
+                        text=f"  chunk {idx + 1} : {e}",
+                    ))
+                    return [o.ticker for o in chunk[:per_chunk]]
+
+        results = await asyncio.gather(
+            *(chunk_task(i, c) for i, c in enumerate(chunks))
+        )
+        await queue.put(None)  # sentinel
+
+        selected_set: set[str] = set()
+        for r in results:
+            selected_set.update(r)
+        kept = [o for o in candidates if o.ticker in selected_set]
+        # Si l'arrondi a fait dépasser la cible, on coupe (score décroissant)
+        if len(kept) > cfg.target:
+            kept = kept[:cfg.target]
+        return kept
+
+    # ── Rounds séquentiels (un seul appel) ────────────────────────────────
+
+    async def _run_round_sequential(
+        self, round_idx: int, candidates: list[Opportunity],
+    ) -> tuple[str, list[Opportunity]]:
+        cfg = ROUNDS[round_idx]
+        prompt = build_round_prompt(round_idx, cfg.target, candidates)
+        text = await self._one_claude_call(prompt)
+        valid = {o.ticker for o in candidates}
+        sel = parse_selected(text, valid, cfg.target)
+        if not sel:
+            sel = [o.ticker for o in candidates[:cfg.target]]
+        sel_set = set(sel)
+        kept = [o for o in candidates if o.ticker in sel_set]
+        display = re.sub(
+            r"===\s*SELECTED\s*===.*?===\s*END\s*===",
+            "", text, flags=re.DOTALL | re.IGNORECASE,
+        ).strip()
+        return display, kept
+
+    # ── Stream principal ──────────────────────────────────────────────────
+
     async def stream(self) -> AsyncIterator[FunnelEvent]:
         if not self.opps:
             yield FunnelEvent(kind="error",
@@ -371,92 +566,73 @@ class FunnelAnalysisSession:
             yield FunnelEvent(kind="end")
             return
 
-        options = ClaudeAgentOptions(system_prompt=SYSTEM_PROMPT_FUNNEL)
-        client = ClaudeSDKClient(options=options)
-        try:
-            await client.__aenter__()
-            current = list(self.opps)
+        candidates = list(self.opps)
+        yield FunnelEvent(
+            kind="info",
+            text=f"Entonnoir démarré sur {len(candidates)} candidats — "
+                 f"objectif : top 10 en {len(ROUNDS)} rounds.",
+        )
 
-            for i, (target, label) in enumerate(ROUNDS):
-                if len(current) <= target:
-                    yield FunnelEvent(
-                        kind="round_start", round_index=i,
-                        text=f"Round {i+1}/6 sauté ({len(current)} ≤ {target}).",
-                        remaining=len(current),
-                    )
-                    continue
-
-                # Enrichissement progressif à partir du round 3 (index 2)
-                if i >= 2:
-                    n_enriched = await self._enrich_missing(current)
-                    if n_enriched:
-                        yield FunnelEvent(
-                            kind="enrich", round_index=i,
-                            text=f"  · enrichissement de {n_enriched} "
-                                 f"tickers (fondamentaux)…",
-                        )
-
+        for i, cfg in enumerate(ROUNDS):
+            if len(candidates) <= cfg.target:
                 yield FunnelEvent(
                     kind="round_start", round_index=i,
-                    text=f"Round {i+1}/6 · {label} · "
-                         f"{len(current)} → {target}",
-                    remaining=len(current),
+                    text=f"Round {i + 1}/{len(ROUNDS)} sauté "
+                         f"({len(candidates)} ≤ {cfg.target}).",
+                    remaining=len(candidates),
                 )
+                continue
 
-                prompt = build_round_prompt(i, target, current)
-                valid = {o.ticker for o in current}
-                buffer = ""
-                try:
-                    await client.query(prompt)
-                    async for msg in client.receive_response():
-                        if type(msg).__name__ == "ResultMessage":
-                            continue
-                        content = getattr(msg, "content", None)
-                        if content is None:
-                            continue
-                        if isinstance(content, str):
-                            buffer += content
-                            continue
-                        for block in content:
-                            if type(block).__name__ == "TextBlock":
-                                t = getattr(block, "text", "")
-                                if t:
-                                    buffer += t
-                except Exception as e:
-                    yield FunnelEvent(kind="error",
-                                      text=f"Erreur round {i+1} : {e}")
-                    yield FunnelEvent(kind="end")
-                    return
-
-                # On masque la liste brute dans l'affichage (on ne garde que
-                # le commentaire / analyse). round_done réaffichera la liste
-                # proprement.
-                display = re.sub(
-                    r"===\s*SELECTED\s*===.*?===\s*END\s*===",
-                    "", buffer, flags=re.DOTALL | re.IGNORECASE,
-                ).strip()
-                if display:
-                    yield FunnelEvent(kind="text", round_index=i, text=display)
-
-                selected = parse_selected(buffer, valid, target)
-                if not selected:
+            # Enrichissement progressif
+            if i >= ENRICH_FROM_ROUND:
+                n_enriched = await self._enrich_missing(candidates)
+                if n_enriched:
                     yield FunnelEvent(
-                        kind="error",
-                        text=f"Round {i+1} : balise SELECTED illisible — "
-                             f"fallback sur les {target} meilleurs par score.",
+                        kind="enrich", round_index=i,
+                        text=f"  · enrichissement de {n_enriched} tickers "
+                             f"(fondamentaux yfinance, concurrence "
+                             f"{ENRICH_CONCURRENCY})…",
                     )
-                    selected = [o.ticker for o in current[:target]]
 
-                selected_set = set(selected)
-                current = [o for o in current if o.ticker in selected_set]
-                yield FunnelEvent(
-                    kind="round_done", round_index=i,
-                    selected=[o.ticker for o in current],
-                    remaining=len(current),
-                )
-        finally:
+            parallel = (cfg.chunk_size is not None
+                        and len(candidates) > cfg.chunk_size)
+            mode = "parallèle" if parallel else "séquentiel"
+            yield FunnelEvent(
+                kind="round_start", round_index=i,
+                text=f"Round {i + 1}/{len(ROUNDS)} · {cfg.label} · "
+                     f"{len(candidates)} → {cfg.target} · mode {mode}",
+                remaining=len(candidates),
+            )
+
             try:
-                await client.__aexit__(None, None, None)
-            except Exception:
-                pass
+                if parallel:
+                    queue: asyncio.Queue[FunnelEvent | None] = asyncio.Queue()
+                    task = asyncio.create_task(
+                        self._run_round_parallel(i, candidates, queue)
+                    )
+                    while True:
+                        ev = await queue.get()
+                        if ev is None:
+                            break
+                        yield ev
+                    candidates = await task
+                else:
+                    commentary, candidates = await self._run_round_sequential(
+                        i, candidates
+                    )
+                    if commentary:
+                        yield FunnelEvent(kind="text", round_index=i,
+                                           text=commentary)
+            except Exception as e:
+                yield FunnelEvent(kind="error",
+                                   text=f"Erreur round {i + 1} : {e}")
+                yield FunnelEvent(kind="end")
+                return
+
+            yield FunnelEvent(
+                kind="round_done", round_index=i,
+                selected=[o.ticker for o in candidates],
+                remaining=len(candidates),
+            )
+
         yield FunnelEvent(kind="end")

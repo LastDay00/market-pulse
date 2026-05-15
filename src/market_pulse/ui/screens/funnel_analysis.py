@@ -1,8 +1,8 @@
-"""Écran d'analyse IA en entonnoir : 200 → 100 → 50 → 25 → 12 → 6 → 3.
+"""Écran d'analyse IA en entonnoir : ~1500 → 750 → 375 → 188 → 94 → 47 → 23 → 10.
 
-Déclenché depuis le scanner par la touche `a`. Stream les commentaires de
-Claude à chaque round dans un RichLog, plus la liste des tickers conservés
-en fin de round. Le verdict final inclut une analyse détaillée des 3
+Déclenché depuis le scanner par la touche `a`. Les premiers rounds sont
+parallélisés (plusieurs subprocess `claude` simultanés) ; les rounds tardifs
+sont séquentiels. Le verdict final inclut une analyse détaillée des 10
 finalistes.
 
 Esc/q pour fermer, `r` pour relancer.
@@ -16,11 +16,12 @@ from textual.binding import Binding
 from textual.screen import Screen
 from textual.widgets import Footer, Header, RichLog, Static
 
-from market_pulse.chat.funnel_analysis import (
-    DEFAULT_SCOPE,
-    FunnelAnalysisSession,
-)
+from market_pulse.chat.funnel_analysis import FunnelAnalysisSession, ROUNDS
 from market_pulse.engine.scanner import Opportunity
+
+# Au-delà de N tickers retenus, on tronque l'affichage de la liste « retenus »
+# pour ne pas inonder l'écran (un round 1 peut garder 750 tickers).
+_RETAINED_PREVIEW = 20
 
 
 class FunnelAnalysisScreen(Screen):
@@ -30,19 +31,20 @@ class FunnelAnalysisScreen(Screen):
         Binding("r", "rerun", "Relancer", show=True),
     ]
 
-    def __init__(self, opportunities: list[Opportunity],
-                 scope: int = DEFAULT_SCOPE) -> None:
+    def __init__(self, opportunities: list[Opportunity]) -> None:
         super().__init__()
-        self.opps = opportunities[:scope]
-        self.scope = scope
+        self.opps = list(opportunities)
         self._busy = False
 
     def compose(self) -> ComposeResult:
         yield Header(show_clock=True)
         n = len(self.opps)
+        progression = " → ".join(str(n)) if False else (
+            f"{n} → " + " → ".join(str(r.target) for r in ROUNDS)
+        )
         yield Static(
-            f"· entonnoir IA · {n} candidats · "
-            f"{n}→100→50→25→12→6→3 · 6 rounds d'élimination ·",
+            f"· entonnoir IA · {n} candidats · {progression} · "
+            f"{len(ROUNDS)} rounds, rounds 1-3 en parallèle ·",
             classes="highlight-amber",
             id="ga-header",
         )
@@ -87,27 +89,42 @@ class FunnelAnalysisScreen(Screen):
             ))
         log.write(Text(
             f"Lancement de l'entonnoir sur {len(self.opps)} candidats. "
-            "6 rounds, ~2-4 min au total selon la verbosité de Claude.",
+            "Les rounds 1-3 tournent en parallèle (plusieurs subprocess "
+            "`claude` simultanés). Compte ~3-6 min selon la taille.",
             style="#8A8680",
         ))
         self._busy = True
-        session = FunnelAnalysisSession(self.opps, provider, scope=self.scope)
+        session = FunnelAnalysisSession(self.opps, provider)
         try:
             async for ev in session.stream():
-                if ev.kind == "round_start":
-                    log.write(Text(""))  # blank line
+                if ev.kind == "info":
+                    log.write(Text(ev.text, style="bold #8A8680"))
+                elif ev.kind == "round_start":
+                    log.write(Text(""))
                     line = Text()
                     line.append("▶ ", style="bold #E8B45D")
                     line.append(ev.text, style="bold #E8B45D")
                     log.write(line)
                 elif ev.kind == "enrich":
                     log.write(Text(ev.text, style="#8A8680"))
+                elif ev.kind == "chunk_start":
+                    log.write(Text(ev.text, style="#6B8CAE"))
+                elif ev.kind == "chunk_done":
+                    log.write(Text(ev.text, style="#7FB069"))
                 elif ev.kind == "text":
                     log.write(Text(ev.text, style="#E8E6E3"))
                 elif ev.kind == "round_done":
                     line = Text()
                     line.append("  ✓ retenus : ", style="#7FB069")
-                    line.append(", ".join(ev.selected), style="#E8E6E3")
+                    if len(ev.selected) > _RETAINED_PREVIEW:
+                        preview = ", ".join(ev.selected[:_RETAINED_PREVIEW])
+                        line.append(preview, style="#E8E6E3")
+                        line.append(
+                            f"  (+{len(ev.selected) - _RETAINED_PREVIEW} autres)",
+                            style="#8A8680",
+                        )
+                    else:
+                        line.append(", ".join(ev.selected), style="#E8E6E3")
                     log.write(line)
                 elif ev.kind == "error":
                     log.write(Text(ev.text, style="#C97064"))

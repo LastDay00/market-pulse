@@ -100,7 +100,7 @@ Liste triée par score décroissant des opportunités détectées.
 | `Enter` | Ouvrir la vue détail |
 | `/` | Recherche par ticker ou nom |
 | `Esc` | Effacer la recherche |
-| `a` | Entonnoir d'analyse IA — Claude réduit 200 candidats à un top 3 sur 6 rounds |
+| `a` | Entonnoir d'analyse IA — Claude réduit ~1500 candidats à un top 10 sur 7 rounds (rounds 1-3 parallélisés) |
 | `r` | Relancer un scan (force refresh) |
 | `Ctrl+P` | Ouvrir la palette de commandes |
 | `q` | Quitter |
@@ -153,22 +153,23 @@ Pour les tickers hors top 50, les fondamentaux ne sont pas chargés par défaut 
 
 ### Entonnoir d'analyse IA (touche `a` depuis le scanner)
 
-Au lieu d'une analyse one-shot, Claude exécute un **entonnoir à 6 rounds** sur les 200 premières opportunités, avec une profondeur d'analyse croissante à chaque tour :
+L'entonnoir prend **l'intégralité de l'univers** (jusqu'à ~1500 tickers selon ton scan) et réduit la liste sur **7 rounds** jusqu'à un **top 10** avec analyse détaillée. Pour tenir l'échelle, les 3 premiers rounds sont **parallélisés** : la liste est découpée en chunks de ~150 candidats et plusieurs subprocess `claude` tournent en concurrence (5 max simultanés sur macOS pour ménager la RAM).
 
-| Round | Réduction | Profondeur |
-| --- | --- | --- |
-| 1 | 200 → 100 | tri rapide sur score, R/R et momentum 20-60j |
-| 2 | 100 → 50 | filtrage technique fin sur cohérence des indicateurs |
-| 3 | 50 → 25 | validation par les ratios de valorisation |
-| 4 | 25 → 12 | croisement technique × fondamental |
-| 5 | 12 → 6 | examen approfondi (news, diversification sectorielle) |
-| 6 | 6 → 3 | verdict détaillé : thèse, technique, fonda, catalyseur/risque, conviction 1-10 |
+| Round | Réduction | Mode | Profondeur |
+| --- | --- | --- | --- |
+| 1 | 1500 → 750 | parallèle (chunks 150) | présélection massive : score, R/R, momentum |
+| 2 | 750 → 375 | parallèle (chunks 150) | tri rapide sur cohérence des signaux |
+| 3 | 375 → 188 | parallèle (chunks 140) | filtrage technique fin, élimination des sur-extensions |
+| 4 | 188 → 94 | séquentiel | consolidation technique (format étendu) |
+| 5 | 94 → 47 | séquentiel | validation fondamentale (PE, PEG, ROE, marges, croissance, dette) |
+| 6 | 47 → 23 | séquentiel | examen approfondi (news, diversification sectorielle) |
+| 7 | 23 → 10 | séquentiel | **verdict détaillé** : thèse, technique, fonda, catalyseur/risque, conviction 1-10 par finaliste |
 
-À chaque round, Claude justifie sa coupe en 3-5 lignes en citant des tickers et chiffres, puis renvoie la liste des survivants entre des balises strictes (`=== SELECTED ===` / `=== END ===`) que l'app parse pour passer au round suivant.
+À chaque round, Claude justifie sa coupe en 3-5 lignes en citant tickers et chiffres, puis renvoie la liste des survivants entre des balises strictes (`=== SELECTED ===` / `=== END ===`) que l'app parse pour passer au round suivant. Pour les rounds parallèles, chaque chunk garde sa proportion de la cible et les sélections sont fusionnées.
 
-À partir du round 3, l'app enrichit silencieusement les candidats qui n'ont pas encore leurs fondamentaux pour que Claude puisse raisonner sur valorisation, marges, croissance et bilan. Au round final, Claude produit pour chacun des 3 finalistes une analyse structurée (thèse d'investissement, lecture technique, lecture fondamentale, catalyseurs ou risques, note de conviction).
+À partir du round 4, l'app enrichit silencieusement les candidats qui n'ont pas encore leurs fondamentaux (concurrence yfinance configurable) pour que Claude puisse raisonner sur valorisation, marges, croissance et bilan. Au round 7 (verdict), Claude produit pour chacun des 10 finalistes une analyse structurée (thèse d'investissement, lecture technique, lecture fondamentale, catalyseurs ou risques, note de conviction 1-10).
 
-L'entonnoir prend typiquement 2-4 minutes selon la verbosité de Claude. Touche `r` pour relancer, `Esc` ou `q` pour revenir au scanner. Mêmes prérequis que le chat par-ticker (`claude` installé et logué). Si la balise `SELECTED` d'un round est illisible, l'app retombe automatiquement sur les N meilleurs par score — l'entonnoir continue.
+L'entonnoir prend typiquement **3-6 minutes** selon la taille de l'univers et la verbosité de Claude. Touche `r` pour relancer, `Esc` ou `q` pour revenir au scanner. Mêmes prérequis que le chat par-ticker (`claude` installé et logué). Si la balise `SELECTED` d'un round (ou d'un chunk) est illisible, fallback automatique sur les N meilleurs par score — l'entonnoir ne se bloque jamais.
 
 **Prérequis** :
 

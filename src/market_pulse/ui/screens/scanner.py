@@ -104,9 +104,10 @@ class ScannerScreen(Screen):
     def action_ai_analysis(self) -> None:
         """Ouvre l'écran d'analyse IA en entonnoir (touche `a`).
 
-        Part de la liste filtrée courante (max 200) puis Claude réduit
-        progressivement à 100 → 50 → 25 → 12 → 6 → 3 sur 6 rounds avec une
-        profondeur d'analyse croissante.
+        Passe l'intégralité de la liste filtrée courante (potentiellement
+        ~1500 tickers selon l'univers) à un entonnoir 7-rounds qui réduit
+        à 750 → 375 → 188 → 94 → 47 → 23 → 10. Les 3 premiers rounds sont
+        parallélisés (plusieurs subprocess `claude` simultanés).
         """
         from market_pulse.ui.screens.funnel_analysis import FunnelAnalysisScreen
         source = self._filtered_opps or self.opportunities
