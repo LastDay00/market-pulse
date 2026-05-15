@@ -229,3 +229,19 @@ DataTable > .datatable--cursor {
 #chat-input:focus {
     border: solid #E8B45D;
 }
+
+/* Écran d'analyse IA globale (touche `a` depuis le scanner) */
+#ga-header {
+    height: 1;
+    padding: 0 1;
+    margin: 0 0 1 0;
+}
+
+#ga-log {
+    height: 1fr;
+    background: #0A0A0B;
+    color: #E8E6E3;
+    border: round #2A2A2E;
+    padding: 0 1;
+    margin: 0 1 1 1;
+}

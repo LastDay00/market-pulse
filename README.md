@@ -100,6 +100,7 @@ Liste triée par score décroissant des opportunités détectées.
 | `Enter` | Ouvrir la vue détail |
 | `/` | Recherche par ticker ou nom |
 | `Esc` | Effacer la recherche |
+| `a` | Analyse IA globale du top 50 (Claude commente la sélection) |
 | `r` | Relancer un scan (force refresh) |
 | `Ctrl+P` | Ouvrir la palette de commandes |
 | `q` | Quitter |
@@ -122,7 +123,7 @@ Toute la configuration passe par la palette : tapez quelques caractères pour fi
 **Mode de scoring** :
 
 - `Technique pur` — signaux purement techniques.
-- `Blend tech + fonda 80/20` — top 20 re-scoré en mixant 80% technique + 20% fondamentaux.
+- `Blend tech + fonda 80/20` — top 50 re-scoré en mixant 80% technique + 20% fondamentaux.
 - `Fondamental pur` — uniquement les ratios financiers (PE, ROE, marge, croissance…). Plus lent (~1-3 min de plus pour enrichir 200 tickers). Adapté à l'investissement long terme.
 
 **Actions globales** :
@@ -148,7 +149,13 @@ Affiche le plan de trade, les indicateurs, les fondamentaux, le graph en chandel
 
 Un drawer s'ouvre en bas de la vue détail avec un input et l'historique de la conversation. Claude est briefé comme analyste financier et a accès en lecture aux données déjà chargées pour le ticker courant (prix, signaux, plan de trade, ratios de valorisation, états financiers annuels et trimestriels, news) via 8 outils MCP custom.
 
-Pour les tickers hors top 20, les fondamentaux ne sont pas chargés par défaut — appuie sur `f` avant d'ouvrir le chat pour que Claude ait les comptes de résultat, le bilan et les flux de trésorerie.
+Pour les tickers hors top 50, les fondamentaux ne sont pas chargés par défaut — appuie sur `f` avant d'ouvrir le chat pour que Claude ait les comptes de résultat, le bilan et les flux de trésorerie.
+
+### Analyse IA globale (touche `a` depuis le scanner)
+
+Appuie sur `a` dans l'écran scanner pour ouvrir un écran d'analyse IA : Claude reçoit le résumé des 50 premières opportunités (ticker, secteur, direction, score, plan de trade, perfs multi-horizons, indicateurs clés) et renvoie une analyse structurée en quatre sections : top 5 selon lui, opportunités à éviter, patterns d'ensemble (secteurs, biais directionnel), points de vigilance globaux.
+
+Cette analyse est one-shot et ne consomme pas d'outils MCP — Claude raisonne uniquement sur les chiffres injectés dans le prompt. Touche `r` pour relancer, `Esc` ou `q` pour revenir au scanner. Mêmes prérequis que le chat par-ticker (`claude` installé et logué).
 
 **Prérequis** :
 

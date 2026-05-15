@@ -256,7 +256,7 @@ async def scan(
     cache_path: Path,
     min_rr: float = 2.0,
     lookback_days: int = 365,
-    enrich_top_n: int = 20,
+    enrich_top_n: int = 50,
     names: dict[str, str] | None = None,
     force_refresh: bool = False,
     progress_callback=None,
@@ -303,8 +303,8 @@ async def scan(
     opps.sort(key=lambda o: o.score, reverse=True)
 
     # Enrichissement selon le mode de scoring :
-    #  - technical   : enrichit juste le top 20 pour l'affichage (score inchangé)
-    #  - blended     : enrichit top 20, blend 80/20 tech+fonda
+    #  - technical   : enrichit juste le top 50 pour l'affichage (score inchangé)
+    #  - blended     : enrichit top 50, blend 80/20 tech+fonda
     #  - fundamental : enrichit TOUT l'univers, score = fondamental pur, re-sort
     if scoring_mode == "fundamental":
         # Plus large mais on limite à ~200 pour ne pas exploser le temps de scan

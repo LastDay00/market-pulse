@@ -14,6 +14,7 @@ class ScannerScreen(Screen):
     BINDINGS = [
         Binding("enter", "open_detail", "Detail", show=True),
         Binding("slash", "focus_search", "Search", show=True),
+        Binding("a", "ai_analysis", "AI analysis", show=True),
         Binding("r", "refresh", "Refresh", show=True),
         Binding("q", "app.quit", "Quit", show=True),
         Binding("escape", "clear_search", "Clear search", show=False),
@@ -99,6 +100,15 @@ class ScannerScreen(Screen):
 
     def action_refresh(self) -> None:
         self.app.exit(return_code=42)
+
+    def action_ai_analysis(self) -> None:
+        """Ouvre l'écran d'analyse IA globale sur le top 50 (touche `a`).
+
+        Utilise la liste filtrée courante pour respecter la recherche en cours.
+        """
+        from market_pulse.ui.screens.global_analysis import GlobalAnalysisScreen
+        source = self._filtered_opps or self.opportunities
+        self.app.push_screen(GlobalAnalysisScreen(list(source)))
 
     def action_focus_search(self) -> None:
         """Touche '/' → focus sur l'input de recherche."""
