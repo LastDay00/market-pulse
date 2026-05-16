@@ -171,6 +171,20 @@ L'entonnoir prend **l'intégralité de l'univers** (jusqu'à ~1500 tickers selon
 
 L'entonnoir prend typiquement **3-6 minutes** selon la taille de l'univers et la verbosité de Claude. Touche `r` pour relancer, `Esc` ou `q` pour revenir au scanner. Mêmes prérequis que le chat par-ticker (`claude` installé et logué). Si la balise `SELECTED` d'un round (ou d'un chunk) est illisible, fallback automatique sur les N meilleurs par score — l'entonnoir ne se bloque jamais.
 
+#### Chat avec les finalistes (touche `c` depuis l'écran d'entonnoir)
+
+Une fois la liste suffisamment réduite (≤ 50 tickers — typiquement à partir du round 5), appuie sur `c` pour ouvrir un drawer Claude en bas de l'écran et discuter de la sélection. Le drawer fonctionne comme le chat par-ticker (voir [Chat Claude finance](#chat-claude-finance-touche-c)) mais avec des outils MCP dédiés aux finalistes :
+
+- `list_finalists` — synthèse rapide de tous les finalistes
+- `get_ticker_details` — détail complet d'un finaliste (overview, signaux, plan de trade, valuation, volatilité)
+- `get_ticker_news` — news récentes pour un finaliste (si chargées)
+- `compare_finalists` — comparaison côte à côte de 2 à 4 finalistes (score, R/R, fondamentaux, perfs)
+- `get_funnel_summary` — répartition LONG/SHORT, secteurs, distribution des scores et R/R
+
+Exemples de questions utiles : « Pourquoi tu mets AAPL devant MSFT ? », « Compare TSLA, GOOG et META sur les marges et la dette », « Quel finaliste a le meilleur R/R pour mon profil prudent ? », « Donne-moi un ordre de priorité d'exécution pour cette semaine ».
+
+Le drawer est créé une fois la liste descendue sous 50 candidats pour éviter de générer un MCP avec des centaines de tickers. Si la liste survivante change (rounds suivants), la session est invalidée et recréée au prochain message pour éviter l'historique périmé.
+
 **Prérequis** :
 
 - Claude Code installé : `npm install -g @anthropic-ai/claude-code` (nécessite Node.js).
