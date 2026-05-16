@@ -404,13 +404,15 @@ class FunnelAnalysisSession:
 
     # ── Claude calls ──────────────────────────────────────────────────────
 
-    @staticmethod
-    async def _one_claude_call(prompt: str) -> str:
-        """Un appel Claude indépendant (subprocess `claude` dédié).
+    # Nombre max de tentatives par appel Claude. Le SDK peut timeout sur
+    # l'init du subprocess (« Control request timeout: initialize ») quand
+    # plusieurs processus se sont enchaînés rapidement — on retente avec
+    # un backoff exponentiel.
+    _MAX_ATTEMPTS = 3
 
-        Chaque appel utilise sa propre `ClaudeSDKClient` → son propre
-        subprocess. C'est ce qui permet le parallélisme entre chunks.
-        """
+    @staticmethod
+    async def _one_claude_call_once(prompt: str) -> str:
+        """Une tentative unique : ouvre un subprocess `claude`, query, lit."""
         options = ClaudeAgentOptions(system_prompt=SYSTEM_PROMPT_FUNNEL)
         client = ClaudeSDKClient(options=options)
         buffer = ""
@@ -437,6 +439,34 @@ class FunnelAnalysisSession:
             except Exception:
                 pass
         return buffer
+
+    @classmethod
+    async def _one_claude_call(cls, prompt: str) -> str:
+        """Appel Claude avec retry sur erreur transitoire.
+
+        Backoff exponentiel : 1s, 2s, 4s. Les erreurs typiques rencontrées :
+          - « Control request timeout: initialize » (SDK n'a pas reçu de
+            réponse du subprocess `claude` dans le délai d'init),
+          - broken pipe / connection reset si un subprocess précédent a
+            laissé des fichiers descripteurs ouverts,
+          - timeout réseau côté backend Anthropic.
+
+        Après `_MAX_ATTEMPTS` échecs, on propage l'exception (le round
+        l'attrape et fait son fallback par score).
+        """
+        last_exc: Exception | None = None
+        for attempt in range(cls._MAX_ATTEMPTS):
+            try:
+                return await cls._one_claude_call_once(prompt)
+            except Exception as e:
+                last_exc = e
+                if attempt == cls._MAX_ATTEMPTS - 1:
+                    break
+                # 1s, 2s, 4s — laisse le temps au système de cleaner les
+                # subprocess précédents et au backend de respirer
+                await asyncio.sleep(2 ** attempt)
+        assert last_exc is not None
+        raise last_exc
 
     # ── Enrichissement yfinance ───────────────────────────────────────────
 
@@ -624,15 +654,26 @@ class FunnelAnalysisSession:
                         yield FunnelEvent(kind="text", round_index=i,
                                            text=commentary)
             except Exception as e:
-                yield FunnelEvent(kind="error",
-                                   text=f"Erreur round {i + 1} : {e}")
-                yield FunnelEvent(kind="end")
-                return
+                # L'appel Claude a échoué malgré les retries. Plutôt que de
+                # tuer l'entonnoir, on tombe sur un fallback déterministe
+                # (top-N par score) et on continue au round suivant.
+                yield FunnelEvent(
+                    kind="error",
+                    text=f"Erreur round {i + 1} : {e}. "
+                         f"Fallback déterministe : top-{cfg.target} par "
+                         f"score, l'entonnoir continue.",
+                )
+                candidates = candidates[:cfg.target]
 
             yield FunnelEvent(
                 kind="round_done", round_index=i,
                 selected=[o.ticker for o in candidates],
                 remaining=len(candidates),
             )
+
+            # Petite pause entre rounds pour laisser respirer les subprocess
+            # `claude` qui viennent de se fermer (évite le « Control request
+            # timeout: initialize » sur le round suivant).
+            await asyncio.sleep(0.5)
 
         yield FunnelEvent(kind="end")
